@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css");
+
+:root {
+  --bg: #FFFFFF;
+  --bg-card: #F8FAFC;
+  --bg-soft: #F1F5F9;
+  --text: #020617;          /* 더 진한 검정 */
+  --text-strong: #000000;
+  --text-sub: #334155;      /* 더 진한 서브 */
+  --text-mute: #64748B;
+  --border: #CBD5E1;        /* 더 진한 보더 */
+  --border-light: #E2E8F0;
+  --accent: #1E3A8A;        /* 더 진한 파랑 */
+  --accent-light: #DBEAFE;
+  --up: #15803D;            /* 더 진한 그린 */
+  --down: #B91C1C;          /* 더 진한 레드 */
+  --warn: #B45309;          /* 더 진한 오렌지 */
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Pretendard", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "tnum", "ss01";
+  font-weight: 500;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
+/* 텍스트 진하게 강제 */
+body, p, span, div, li, td, th { color: var(--text); }
+
+/* 타임라인 점 애니메이션 */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.2); }
+}
+.pulse-dot { animation: pulse-dot 2s infinite; }
