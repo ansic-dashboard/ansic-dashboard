@@ -1,15 +1,26 @@
 export type DailySales = {
   date: string;          // YYYY-MM-DD
   weekday: number;       // 0=일 ~ 6=토
-  revenue: number;       // 매출 (원)
+  revenue: number;       // 총매출 (원)
   lunchRevenue?: number;
   dinnerRevenue?: number;
-  teamsTotal?: number;   // 팀수 합
-  peopleTotal?: number;  // 인원 합
-  reservation?: number;  // 예약 팀수
-  walkin?: number;       // 워크인 팀수
-  catering?: number;     // 케이터링 매출 (있다면)
-  isCateringHeavy?: boolean; // 케이터링 비중 큰 날 표시
+  deliveryRevenue?: number;  // 배달 매출
+  // 운영지표 (operational.json에서 결합)
+  reserveTeams?: number;
+  reservePeople?: number;
+  walkinTeams?: number;
+  walkinPeople?: number;
+  totalTeams?: number;
+  totalPeople?: number;
+  visitPeople?: number;
+  phoneIn?: number;      // 유선전화 유입
+  catchIn?: number;      // 캐치테이블 유입
+  naverIn?: number;      // 네이버 유입
+  turnover?: number;     // 회전율
+  reserveRev?: number;   // 예약 매출
+  walkinRev?: number;    // 워크인 매출
+  lunchRev?: number;     // 점심 매출 (operational 별칭)
+  dinnerRev?: number;    // 저녁 매출
 };
 
 export type MarketingCampaign = {
@@ -18,21 +29,24 @@ export type MarketingCampaign = {
   type: "meta" | "influencer" | "other";
   title: string;
   description: string;
-  cost: number;           // 부가세 별도 (원)
+  cost: number;
   costBreakdown?: { label: string; amount: number }[];
+  status?: string;
   createdAt?: string;
   updatedAt?: string;
 };
 
 export type Influencer = {
   id: string;
-  month: string;          // 2026-04 등
+  month: string;
   name: string;
   handle: string;
   concept: string;
-  followers: string;      // "51.3만" 등 텍스트
+  followers: string;
   cost: number;
   videoUrl?: string;
+  shootDate?: string;
+  status?: string;        // 촬영 전/촬영 완료/편집 중/업로드 완료
   strength: string;
   caution: string;
   renewalOpinion: string;
@@ -42,18 +56,24 @@ export type Influencer = {
 };
 
 export type InstagramInsight = {
-  reach?: number;     // 도달
-  views?: number;     // 조회
-  likes?: number;     // 좋아요
-  comments?: number;  // 댓글
-  shares?: number;    // 공유
-  saves?: number;     // 저장
+  reach?: number;
+  views?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  saves?: number;
 };
 
 export type WeatherDay = {
   date: string;
   tempMin?: number;
   tempMax?: number;
-  rain?: number;       // mm
-  condition?: string;  // 맑음/흐림/비/눈 등
+  rain?: number;
+  condition?: string;     // 맑음/흐림/비/눈
+};
+
+export type EditableNote = {
+  key: string;            // 식별자
+  value: string;
+  updatedAt?: string;
 };

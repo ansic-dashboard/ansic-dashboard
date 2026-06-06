@@ -1,273 +1,254 @@
 "use client";
-import { useMemo, useState } from "react";
-import { useCampaigns } from "@/lib/hooks";
+import { useMemo } from "react";
+import { useSales, useNotes } from "@/lib/hooks";
 import {
-  summaryStatements, monthlyRows, cateringAdjustmentNote, costTimeline,
-  totalCost, addedRows, addedTotal, preMarketingNote
+  summaryStatements, monthlyCompare, effectRows, addedRevenueTotal,
+  cateringNote, costItems, totalCost, summary, activityRows, preMarketingNote,
 } from "@/lib/marketing-analysis";
-import { fmtKRW, fmtPct, fmtDate } from "@/lib/sales-analyzer";
-import { Card, SectionTitle, Delta, Badge, EditableText } from "@/components/ui";
+import { monthTotal, calcChange, fmtKRW, fmtPct, fmtDate, getLatestDate } from "@/lib/sales-analyzer";
+import { Card, SectionTitle, Delta, Badge, EditableText, EmptyState, SummaryHeader } from "@/components/ui";
 
 export default function MarketingEffectTab() {
-  const { data: campaigns, reload } = useCampaigns();
-  
-  // 핵심 요약 편집 가능 (로컬 스토리지)
-  const [editableSummary, setEditableSummary] = useState<string[]>(summaryStatements);
+  const { data, loading } = useSales();
+  const { notes, saveNote } = useNotes();
 
-  // 캠페인 비용 합계
-  const dbCostTotal = useMemo(() => {
-    if (!campaigns || campaigns.length === 0) return totalCost;
-    return campaigns.reduce((s: number, c: any) => s + (c.cost ?? 0), 0);
-  }, [campaigns]);
+  // 2026년 매출은 실시간으로 갱신 (과거는 고정)
+  const liveMonthly = useMemo(() => {
+    return monthlyCompare.map((row) => {
+      const mNum = parseInt(row.month, 10);
+      if (!mNum || mNum > 12 || row.month.includes("1~20")) return row;
+      const live = monthTotal(data, 2026, mNum).revenue;
+      if (live > 0) {
+        return { ...row, y2026: live, vs2025full: calcChange(live, row.y2025full), vs2025ex: calcChange(live, row.y2025exCatering) };
+      }
+      return row;
+    });
+  }, [data]);
+
+  if (loading) return <EmptyState message="데이터 불러오는 중..." />;
+  const note = (key: string, def: string) => notes[key] ?? def;
 
   return (
     <div className="space-y-6">
-      {/* 1. 핵심 요약 */}
+      {/* === 상단 핵심 요약 === */}
+      <SummaryHeader
+        title="마케팅 효과 한눈에 보기"
+        sub="2026년 2월 마케팅 시작 후 ~ 5월 20일 기준"
+        metrics={[
+          { label: "쓴 마케팅 비용", value: fmtKRW(totalCost, { compact: true }) },
+          { label: "마케팅으로 늘어난 추정 매출", value: fmtKRW(addedRevenueTotal, { compact: true }), tone: "good" },
+          { label: "아직 회수 못한 차액", value: fmtKRW(summary.diff, { compact: true }), tone: "down" },
+          { label: "진행 중인 캠페인", value: `${costItems.filter(c => c.status === "ongoing").length}건`, tone: "warn" },
+        ]}
+      />
+
+      {/* 핵심 요약 문장 (편집 가능) */}
       <Card>
-        <SectionTitle sub="2026.05 기준 한 페이지 요약 (각 줄 클릭해서 수정 가능)">핵심 요약</SectionTitle>
+        <SectionTitle sub="줄을 클릭하면 직접 수정할 수 있어요">핵심 요약</SectionTitle>
         <ol className="space-y-3">
-          {editableSummary.map((s, i) => (
-            <li key={i} className="flex gap-3 text-sm leading-relaxed">
-              <span className="font-black text-[#1E3A8A] tnum shrink-0 text-base">{i + 1}.</span>
-              <div className="flex-1">
-                <EditableText
-                  value={s}
-                  onSave={(v) => {
-                    const next = [...editableSummary];
-                    next[i] = v;
-                    setEditableSummary(next);
-                  }}
-                  multiline
-                  className="text-black font-bold leading-relaxed"
-                />
-              </div>
+          {summaryStatements.map((s, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="font-black text-[#1E3A8A] text-base shrink-0">{i + 1}.</span>
+              <div className="flex-1"><EditableText value={note(`mkt_summary_${i}`, s)} onSave={(v) => saveNote(`mkt_summary_${i}`, v)} multiline className="text-black font-bold leading-relaxed" /></div>
             </li>
           ))}
         </ol>
       </Card>
 
-      {/* 2. 월별 매출 + 전월 대비 증감폭 비교 */}
+      {/* === ① 비용 vs 늘어난 매출 (둘 다, 진행중 명시) === */}
       <Card>
-        <SectionTitle sub="2024 · 2025 · 2026년 월별 매출과 전월 대비 증감폭 — 같은 달끼리 3개년 비교">
-          ① 월별 총매출 및 전월 대비 증감폭
-        </SectionTitle>
+        <SectionTitle sub="아직 진행 중이라 최종 결과가 아니에요">① 쓴 비용 vs 늘어난 매출</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+          <div className="bg-white border-2 border-[#CBD5E1] rounded-2xl p-4">
+            <p className="text-xs font-extrabold text-[#475569] mb-1">쓴 마케팅 비용</p>
+            <p className="text-2xl font-black text-black tnum">{fmtKRW(totalCost, { compact: true })}</p>
+            <p className="text-[10px] text-[#64748B] font-bold mt-1">메타광고 + 인플루언서 (부가세 별도)</p>
+          </div>
+          <div className="bg-[#F0FDF4] border-2 border-[#15803D] rounded-2xl p-4">
+            <p className="text-xs font-extrabold text-[#15803D] mb-1">마케팅으로 늘어난 추정 매출</p>
+            <p className="text-2xl font-black text-[#15803D] tnum">{fmtKRW(addedRevenueTotal, { compact: true })}</p>
+            <p className="text-[10px] text-[#15803D] font-bold mt-1">예년 자연 증가분을 뺀 추가 상승분</p>
+          </div>
+          <div className="bg-[#FEF2F2] border-2 border-[#B91C1C] rounded-2xl p-4">
+            <p className="text-xs font-extrabold text-[#B91C1C] mb-1">아직 회수 못한 차액</p>
+            <p className="text-2xl font-black text-[#B91C1C] tnum">{fmtKRW(summary.diff, { compact: true })}</p>
+            <p className="text-[10px] text-[#B91C1C] font-bold mt-1">늘어난 매출 − 비용</p>
+          </div>
+        </div>
+        <div className="p-4 bg-[#FFFBEB] border border-[#B45309] rounded-xl">
+          <p className="text-sm font-bold text-black leading-relaxed">
+            <span className="font-black">아직 비용을 다 회수하진 못했어요(약 -104만원).</span> 하지만 인플루언서·광고 효과는 보통 게시 후 몇 주~몇 달 뒤에 천천히 나타나고, <span className="font-black">5월은 아직 1~20일치만</span> 반영된 잠정치예요. 월 전체로 보면 차이는 더 좁혀질 가능성이 큽니다.
+          </p>
+        </div>
+      </Card>
+
+      {/* === ② 마케팅 활동 타임라인 (누가 언제 무엇을) === */}
+      <Card>
+        <SectionTitle sub="누가 · 언제 · 무엇을 했는지">② 마케팅 활동 타임라인</SectionTitle>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b-2 border-[#CBD5E1] text-[#334155] bg-[#F1F5F9]">
-                <th className="text-left py-2 px-2 font-extrabold text-xs">월</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">2024 매출</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">2025 매출</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">2026 매출</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">2024 증감</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">2025 증감</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">2026 증감</th>
-                <th className="text-right py-2 px-2 font-extrabold text-xs">차이<br/>(2026-2025)</th>
-                <th className="text-left py-2 px-2 font-extrabold text-xs">마케팅 활동</th>
+              <tr className="border-b-2 border-[#CBD5E1] bg-[#F1F5F9] text-[#475569]">
+                <th className="text-left py-2 px-2 font-extrabold text-xs">시점</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">채널</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">누가</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">활동</th>
+                <th className="text-center py-2 px-2 font-extrabold text-xs">상태</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">비용</th>
               </tr>
             </thead>
             <tbody>
-              {monthlyRows.map((r, i) => (
+              {activityRows.map((r, i) => (
                 <tr key={i} className="border-b border-[#E2E8F0] hover:bg-[#F8FAFC]">
-                  <td className="py-3 px-2 font-extrabold text-black">{r.month}</td>
-                  <td className="py-3 px-2 text-right tnum text-[#334155] font-medium">{(r.y2024Sales / 10000).toFixed(0)}만</td>
-                  <td className="py-3 px-2 text-right tnum text-[#334155] font-medium">{(r.y2025Sales / 10000).toFixed(0)}만</td>
-                  <td className="py-3 px-2 text-right tnum font-extrabold text-black">{(r.y2026Sales / 10000).toFixed(0)}만</td>
-                  <td className="py-3 px-2 text-right tnum"><Delta value={r.y2024Change} /></td>
-                  <td className="py-3 px-2 text-right tnum"><Delta value={r.y2025Change} /></td>
-                  <td className="py-3 px-2 text-right tnum"><Delta value={r.y2026Change} /></td>
-                  <td className="py-3 px-2 text-right tnum">
-                    {r.diff !== null ? <Delta value={r.diff} suffix="p" /> : <span className="text-xs text-[#64748B] font-bold">비교 불가</span>}
-                  </td>
-                  <td className="py-3 px-2 text-[10px] text-[#334155] font-bold">{r.marketing}</td>
+                  <td className="py-2.5 px-2 font-bold text-black tnum whitespace-nowrap">{fmtDate(r.date, "md")}</td>
+                  <td className="py-2.5 px-2"><Badge tone={r.channel === "메타광고" ? "info" : "good"}>{r.channel}</Badge></td>
+                  <td className="py-2.5 px-2 text-black font-bold text-xs whitespace-nowrap">{r.who}</td>
+                  <td className="py-2.5 px-2 text-[#334155] font-medium text-xs">{r.activity}</td>
+                  <td className="py-2.5 px-2 text-center"><Badge tone={r.status === "완료" ? "good" : r.status === "편집 중" ? "info" : "warn"}>{r.status}</Badge></td>
+                  <td className="py-2.5 px-2 text-right font-extrabold text-black tnum">{fmtKRW(r.cost, { compact: true })}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <p className="text-xs text-[#64748B] mt-3 font-medium">
-          ※ "증감" = 같은 연도 안에서 직전 달과 비교한 증감률 (예: 2026년 2월 증감 = (2026.02 - 2026.01) / 2026.01)
+      </Card>
+
+      {/* === ③ 마케팅 효과: 자연 증가 vs 올해 실제 === */}
+      <Card>
+        <SectionTitle sub="예년에 자연스럽게 늘던 만큼(자연 평균)을 빼고, 올해 더 늘어난 부분이 마케팅 효과">
+          ③ 마케팅으로 더 늘어난 매출
+        </SectionTitle>
+        <div className="overflow-x-auto mb-3">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-[#CBD5E1] bg-[#F1F5F9] text-[#475569]">
+                <th className="text-left py-2 px-2 font-extrabold text-xs">구간</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">마케팅</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">예년 자연<br/>증가</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">올해 실제<br/>증가</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">마케팅<br/>효과</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">늘어난<br/>매출</th>
+              </tr>
+            </thead>
+            <tbody>
+              {effectRows.map((r, i) => (
+                <tr key={i} className={`border-b border-[#E2E8F0] ${r.highlight ? "bg-[#F0FDF4]" : ""}`}>
+                  <td className="py-3 px-2 font-extrabold text-black whitespace-nowrap">{r.span}</td>
+                  <td className="py-3 px-2 text-[10px] text-[#475569] font-bold">{r.marketing}</td>
+                  <td className="py-3 px-2 text-right tnum text-[#475569] font-medium">{fmtPct(r.natural)}</td>
+                  <td className="py-3 px-2 text-right tnum font-black text-black">{fmtPct(r.y2026)}</td>
+                  <td className="py-3 px-2 text-right tnum"><span className="font-black text-[#15803D]">+{(r.effect * 100).toFixed(1)}%p</span></td>
+                  <td className="py-3 px-2 text-right tnum font-black text-[#1E3A8A]">{fmtKRW(r.addedRevenue, { compact: true })}</td>
+                </tr>
+              ))}
+              <tr className="bg-[#1E3A8A]">
+                <td colSpan={5} className="py-3 px-2 font-black text-white text-right">마케팅으로 늘어난 추정 매출 합계</td>
+                <td className="py-3 px-2 text-right font-black text-white tnum">{fmtKRW(addedRevenueTotal, { compact: true })}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-[#64748B] font-medium leading-relaxed">
+          ※ 계산 방법: 각 구간의 '늘어난 매출' = 그 달 매출 × 마케팅 효과(%p). 예) 2→3월은 {effectRows[0].formula}.
         </p>
       </Card>
 
-      {/* 3. 케이터링 조정 후 참고 비교 */}
-      <Card className="bg-[#FFFBEB] border-[#B45309]">
-        <div className="flex items-baseline gap-2 mb-3">
-          <Badge tone="warn">참고</Badge>
-          <SectionTitle sub={cateringAdjustmentNote.description}>
-            ② {cateringAdjustmentNote.title}
-          </SectionTitle>
+      {/* === ④ 월별 총매출 비교 === */}
+      <Card>
+        <SectionTitle sub="2026년 매출은 실시간으로 자동 갱신 · 2025년은 케이터링 포함/제외 둘 다 표시">
+          ④ 작년·재작년과 월별 매출 비교
+        </SectionTitle>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-[#CBD5E1] bg-[#F1F5F9] text-[#475569]">
+                <th className="text-left py-2 px-2 font-extrabold text-xs">월</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">2024</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">2025<br/>(케이터링 포함)</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">2025<br/>(케이터링 제외)</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">2026</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">작년 대비<br/>(제외 기준)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {liveMonthly.map((r, i) => (
+                <tr key={i} className={`border-b border-[#E2E8F0] hover:bg-[#F8FAFC] ${r.hasCatering ? "bg-[#FFFBEB]" : ""}`}>
+                  <td className="py-3 px-2 font-extrabold text-black">{r.month}</td>
+                  <td className="py-3 px-2 text-right tnum text-[#64748B] font-medium">{(r.y2024 / 10000).toFixed(0)}만</td>
+                  <td className="py-3 px-2 text-right tnum text-[#475569] font-medium">{(r.y2025full / 10000).toFixed(0)}만</td>
+                  <td className="py-3 px-2 text-right tnum font-bold text-black">{r.y2025exCatering !== r.y2025full ? `${(r.y2025exCatering / 10000).toFixed(0)}만` : "동일"}</td>
+                  <td className="py-3 px-2 text-right tnum font-black text-black">{(r.y2026 / 10000).toFixed(0)}만</td>
+                  <td className="py-3 px-2 text-right tnum">{r.vs2025ex !== null ? <Delta value={r.vs2025ex} inline /> : <span className="text-[10px] text-[#64748B] font-bold">기준</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
+        <p className="text-xs text-[#64748B] mt-3 font-medium">※ 노란 줄(3월)은 케이터링 700만원이 들어있던 달이에요.</p>
+      </Card>
+
+      {/* === ⑤ 케이터링 매출 이야기 === */}
+      <Card className="bg-[#FFFBEB] border-[#B45309]">
+        <div className="flex items-baseline gap-2 mb-1"><Badge tone="warn">왜 따로 보나요?</Badge></div>
+        <SectionTitle sub={cateringNote.description}>⑤ {cateringNote.title}</SectionTitle>
         <table className="w-full text-sm">
           <tbody>
-            {cateringAdjustmentNote.rows.map((row, i) => (
-              <tr key={i} className={`border-b border-[#FCD34D] ${i === cateringAdjustmentNote.rows.length - 1 ? 'bg-white' : ''}`}>
-                <td className="py-2 px-2 font-bold text-black">{row.label}</td>
-                <td className={`py-2 px-2 text-right tnum font-extrabold ${
-                  i === cateringAdjustmentNote.rows.length - 1 
-                    ? (row.value < 0 ? 'text-[#B91C1C]' : 'text-[#15803D]')
-                    : 'text-black'
-                }`}>
-                  {fmtKRW(row.value, { sign: i === cateringAdjustmentNote.rows.length - 1 })}
-                </td>
-              </tr>
-            ))}
+            {cateringNote.rows.map((row, i) => {
+              const t = row.type;
+              const bg = t === "result" ? "bg-[#DBEAFE]" : "";
+              const color = t === "add" ? "text-[#15803D]" : t === "subtract" ? "text-[#B91C1C]" :
+                t === "result" ? "text-[#1E3A8A]" : t === "diff" ? (row.value < 0 ? "text-[#B91C1C]" : "text-[#15803D]") : "text-black";
+              return (
+                <tr key={i} className={`border-b border-[#FCD34D] ${bg}`}>
+                  <td className="py-2.5 px-2 font-bold text-black">{row.label}</td>
+                  <td className={`py-2.5 px-2 text-right tnum font-black ${color}`}>{t === "diff" ? fmtKRW(row.value, { sign: true }) : fmtKRW(Math.abs(row.value))}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
-        <p className="text-sm font-extrabold text-[#B45309] mt-3">→ {cateringAdjustmentNote.conclusion}</p>
+        <p className="text-sm font-black text-[#B45309] mt-3">→ {cateringNote.conclusion}</p>
       </Card>
 
-      {/* 4. 마케팅 비용 타임라인 */}
+      {/* === ⑥ 비용 상세 === */}
       <Card>
-        <SectionTitle sub="진행 날짜순으로 정리한 비용 흐름">③ 마케팅 비용 타임라인</SectionTitle>
-        <CostTimeline campaigns={campaigns} />
-        <div className="mt-4 pt-4 border-t-2 border-[#CBD5E1] flex items-baseline justify-between">
-          <span className="text-sm font-extrabold text-black">총 마케팅 비용</span>
-          <span className="text-2xl font-black text-[#1E3A8A] tnum">{fmtKRW(dbCostTotal)}</span>
-        </div>
-      </Card>
-
-      {/* 5. 추정 추가 매출 */}
-      <Card>
-        <SectionTitle sub="해당 월 매출 × 마케팅 효과(%p) = 마케팅으로 인해 추가로 발생한 것으로 추정되는 매출">
-          ④ 마케팅으로 늘어난 추정 매출
-        </SectionTitle>
-        <div className="space-y-2">
-          {addedRows.map((r, i) => (
-            <div key={i} className="flex items-baseline justify-between bg-white border border-[#CBD5E1] rounded-lg p-3">
-              <div>
-                <p className="text-sm font-extrabold text-black">{r.segment}</p>
-                <p className="text-xs text-[#334155] font-medium mt-0.5">{r.basis}</p>
+        <SectionTitle sub="실제로 돈이 나간 것만 (메타광고 · 인플루언서)">⑥ 마케팅 비용 상세</SectionTitle>
+        <div className="space-y-3">
+          {costItems.map((c, i) => (
+            <div key={i} className="bg-white border border-[#CBD5E1] rounded-xl p-3">
+              <div className="flex items-baseline gap-2 flex-wrap mb-1">
+                <span className="text-sm font-black text-black tnum">{fmtDate(c.date, "long")}</span>
+                <Badge tone={c.type === "meta" ? "info" : "good"}>{c.type === "meta" ? "메타광고" : "인플루언서"}</Badge>
+                {c.status === "ongoing" ? <Badge tone="warn">진행 중</Badge> : <Badge tone="good">완료</Badge>}
               </div>
-              <p className="text-lg font-black text-[#15803D] tnum">+{fmtKRW(r.added, { compact: true })}</p>
+              <div className="flex items-baseline justify-between flex-wrap gap-2">
+                <p className="text-base font-extrabold text-black">{c.title}</p>
+                <p className="text-lg font-black text-[#1E3A8A] tnum">{fmtKRW(c.cost)}</p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-[#E2E8F0] flex flex-wrap gap-x-3 gap-y-1">
+                {c.details.map((b, j) => (
+                  <span key={j} className="text-xs text-black font-medium"><span className="text-[#64748B]">{b.label}</span> {fmtKRW(b.amount, { compact: true })}</span>
+                ))}
+              </div>
             </div>
           ))}
-          <div className="flex items-baseline justify-between bg-[#DBEAFE] border-2 border-[#1E3A8A] rounded-lg p-4 mt-3">
-            <p className="text-sm font-extrabold text-[#1E3A8A]">합계</p>
-            <p className="text-2xl font-black text-[#1E3A8A] tnum">+{fmtKRW(addedTotal, { compact: true })}</p>
-          </div>
+        </div>
+        <div className="mt-4 pt-4 border-t-2 border-[#CBD5E1] flex items-baseline justify-between">
+          <span className="text-sm font-black text-black">총 마케팅 비용 (부가세 별도)</span>
+          <span className="text-2xl font-black text-[#1E3A8A] tnum">{fmtKRW(totalCost)}</span>
         </div>
       </Card>
 
-      {/* 6. 종합 비교 */}
-      <Card>
-        <SectionTitle>⑤ 종합 — 비용 대비 효과</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="bg-white border border-[#CBD5E1] rounded-lg p-4 text-center">
-            <p className="text-xs text-[#334155] font-bold mb-1">마케팅 비용</p>
-            <p className="text-2xl font-black text-black tnum">{fmtKRW(dbCostTotal, { compact: true })}</p>
-          </div>
-          <div className="bg-white border border-[#CBD5E1] rounded-lg p-4 text-center">
-            <p className="text-xs text-[#334155] font-bold mb-1">추정 추가 매출</p>
-            <p className="text-2xl font-black text-black tnum">{fmtKRW(addedTotal, { compact: true })}</p>
-          </div>
-          <div className={`border-2 rounded-lg p-4 text-center ${
-            addedTotal - dbCostTotal >= 0 ? "bg-[#F0FDF4] border-[#15803D]" : "bg-[#FEF2F2] border-[#B91C1C]"
-          }`}>
-            <p className="text-xs text-[#334155] font-bold mb-1">차액 (효과 − 비용)</p>
-            <p className={`text-2xl font-black tnum ${addedTotal - dbCostTotal >= 0 ? "text-[#15803D]" : "text-[#B91C1C]"}`}>
-              {fmtKRW(addedTotal - dbCostTotal, { compact: true, sign: true })}
-            </p>
-          </div>
-        </div>
-      </Card>
-
-      {/* 7. 참고: 마케팅 시작 전 */}
-      <Card className="bg-[#F1F5F9] border-[#CBD5E1]">
-        <div className="flex items-baseline gap-2 mb-2">
-          <Badge tone="neutral">참고</Badge>
-          <h3 className="text-base font-extrabold text-black">{preMarketingNote.title}</h3>
-        </div>
-        <p className="text-sm text-black font-medium mb-2 leading-relaxed">{preMarketingNote.detail}</p>
-        <p className="text-sm font-extrabold text-[#1E3A8A]">→ {preMarketingNote.conclusion}</p>
-      </Card>
-
-      {/* 8. 주의 */}
-      <Card className="bg-[#FEF2F2] border-[#B91C1C]">
-        <div className="flex items-baseline gap-2 mb-2">
-          <Badge tone="down">주의</Badge>
-          <h3 className="text-base font-extrabold text-black">이 추정 매출, 다 마케팅 덕은 아닐 수 있음</h3>
-        </div>
-        <p className="text-sm font-bold text-black mb-2">함께 영향을 줬을 만한 요인들:</p>
-        <ul className="space-y-1 text-sm text-black font-medium">
-          <li>• 봄철 정원이 예쁜 시기 (4~5월)</li>
-          <li>• 테라스 에어컨·폴딩도어 설치로 좌석 더 쓰게 됨</li>
-          <li>• VIP 멤버십(구 화이트카드)으로 회사원 워크인 늘어남</li>
-          <li>• 날씨, 캐치테이블 노출, 인근 매장 변화 등</li>
-        </ul>
-        <p className="text-xs font-bold text-[#B91C1C] mt-3 italic">
-          → '마케팅을 포함한 여러 노력의 결과'로 봐주세요.
-        </p>
-      </Card>
-    </div>
-  );
-}
-
-/** 가로 타임라인 형태의 비용 표시 */
-function CostTimeline({ campaigns }: { campaigns: any[] }) {
-  const items = campaigns && campaigns.length > 0
-    ? campaigns.map((c: any) => ({
-        date: c.start_date,
-        type: c.type,
-        title: c.title,
-        cost: c.cost,
-        breakdown: c.cost_breakdown ?? [],
-        status: c.status ?? "completed",
-        description: c.description,
-      }))
-    : costTimeline.map(c => ({
-        date: c.date,
-        type: c.type,
-        title: c.title,
-        cost: c.cost,
-        breakdown: c.details,
-        status: c.status,
-        description: c.note,
-      }));
-
-  const sorted = [...items].sort((a, b) => (a.date < b.date ? -1 : 1));
-
-  return (
-    <div className="relative">
-      <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-[#CBD5E1]" />
-      <div className="space-y-3">
-        {sorted.map((item, i) => {
-          const isOngoing = item.status === "ongoing";
-          const dotColor = isOngoing ? "bg-[#B45309]" : "bg-[#15803D]";
-          const typeColor = item.type === "meta" ? "bg-[#1E3A8A]" : "bg-[#15803D]";
-          const typeLabel = item.type === "meta" ? "메타광고" : item.type === "influencer" ? "인플루언서" : "기타";
-          return (
-            <div key={i} className="relative pl-10">
-              <div className={`absolute left-1 top-1 w-5 h-5 rounded-full ${dotColor} border-2 border-white ${isOngoing ? "pulse-dot" : ""}`} />
-              <div className="bg-white border border-[#CBD5E1] rounded-lg p-3">
-                <div className="flex items-baseline gap-2 flex-wrap mb-1">
-                  <span className="text-sm font-extrabold text-black tnum">{fmtDate(item.date, "long")}</span>
-                  <span className={`text-[10px] font-extrabold text-white px-1.5 py-0.5 rounded ${typeColor}`}>
-                    {typeLabel}
-                  </span>
-                  {isOngoing ? <Badge tone="warn">진행 중</Badge> : <Badge tone="good">완료</Badge>}
-                </div>
-                <div className="flex items-baseline justify-between flex-wrap gap-2">
-                  <p className="text-base font-extrabold text-black">{item.title}</p>
-                  <p className="text-lg font-black text-[#1E3A8A] tnum">{fmtKRW(item.cost)}</p>
-                </div>
-                {item.description && <p className="text-xs text-[#334155] mt-1 font-medium">{item.description}</p>}
-                {item.breakdown && item.breakdown.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-[#E2E8F0]">
-                    <p className="text-[10px] font-bold text-[#64748B] mb-1">비용 내역</p>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1">
-                      {item.breakdown.map((b: any, j: number) => (
-                        <span key={j} className="text-xs text-black font-medium">
-                          <span className="text-[#334155]">{b.label}</span> {fmtKRW(b.amount, { compact: true })}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      {/* === 참고 / 주의 (편집 가능) === */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="bg-[#F1F5F9] border-[#CBD5E1]">
+          <div className="mb-2"><Badge tone="neutral">참고하면 좋은 점</Badge></div>
+          <EditableText value={note("mkt_reference", preMarketingNote.reference)} onSave={(v) => saveNote("mkt_reference", v)} multiline className="text-sm text-black font-bold leading-relaxed" />
+        </Card>
+        <Card className="bg-[#FEF2F2] border-[#B91C1C]">
+          <div className="mb-2"><Badge tone="down">주의해서 볼 점</Badge></div>
+          <EditableText value={note("mkt_caution", preMarketingNote.caution)} onSave={(v) => saveNote("mkt_caution", v)} multiline className="text-sm text-black font-bold leading-relaxed" />
+        </Card>
       </div>
     </div>
   );

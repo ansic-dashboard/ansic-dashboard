@@ -1,245 +1,309 @@
 "use client";
 import { useMemo } from "react";
-import { useSales, useCampaigns } from "@/lib/hooks";
+import { useSales, useInfluencers } from "@/lib/hooks";
 import {
-  sumPeriod, getCurrentWeek, getCurrentMonth, getLatestDate,
-  fmtKRW, fmtPct, calcChange, addDays, projectMonthEnd, daysInMonth,
-  MONTHLY_TARGET, fmtDate, shiftYear
+  sumPeriod, getCurrentWeek, getLatestDate, fmtKRW, fmtPct, calcChange,
+  addDays, projectMonthEnd, daysInMonth, MONTHLY_TARGET, fmtDate, shiftYear, monthTotal, shiftMonthSafe,
 } from "@/lib/sales-analyzer";
+import { monthlyOpSummary, revenueMix, timeMix } from "@/lib/operational";
 import { generateInsights } from "@/lib/insight-generator";
-import { costTimeline } from "@/lib/marketing-analysis";
-import { Card, KPI, Delta, SectionTitle, InsightCard, EmptyState, Badge } from "@/components/ui";
+import { activityRows, totalCost, costItems } from "@/lib/marketing-analysis";
+import { Card, SectionTitle, EmptyState, Delta, Badge, KPICard, InsightCard, ProgressBar } from "@/components/ui";
+import DailyReportCard from "@/components/DailyReportCard";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
 export default function OverviewTab() {
   const { data, loading, error } = useSales();
-  const { data: campaigns } = useCampaigns();
-
+  const { data: influencers } = useInfluencers();
   const latest = getLatestDate(data);
 
-  // 목표/현재/예상 계산
-  const goalStats = useMemo(() => {
+  const goal = useMemo(() => {
     if (!latest) return null;
-    const year = parseInt(latest.slice(0, 4), 10);
-    const month = parseInt(latest.slice(5, 7), 10);
-    const proj = projectMonthEnd(data, year, month, latest);
-    const lastDay = daysInMonth(year, month);
-    const elapsed = parseInt(latest.slice(8, 10), 10);
+    const y = +latest.slice(0, 4), m = +latest.slice(5, 7);
+    const proj = projectMonthEnd(data, y, m, latest);
+    const last = daysInMonth(y, m);
+    const elapsed = +latest.slice(8, 10);
     return {
-      year, month,
-      lastDay,
-      elapsed,
-      target: MONTHLY_TARGET,
-      cur: proj.cur,
-      progress: proj.cur / MONTHLY_TARGET,
-      projected: proj.projected,
-      remainDays: proj.remainDays,
-      needPerDay: proj.needPerDay(MONTHLY_TARGET),
+      y, m, last, elapsed,
+      cur: proj.cur, progress: proj.cur / MONTHLY_TARGET, projected: proj.projected,
+      remainDays: proj.remainDays, needPerDay: proj.needPerDay(MONTHLY_TARGET),
       gap: MONTHLY_TARGET - proj.cur,
     };
   }, [data, latest]);
 
-  // 작년 대비
-  const yearCompare = useMemo(() => {
+  // KPI: 이번달 vs 전월 vs 작년
+  const kpi = useMemo(() => {
     if (!latest) return null;
+    const y = +latest.slice(0, 4), m = +latest.slice(5, 7);
+    const cur = monthlyOpSummary(data, y, m);
+    const pmDate = shiftMonthSafe(`${y}-${String(m).padStart(2, "0")}-01`, -1);
+    const pm = monthlyOpSummary(data, +pmDate.slice(0, 4), +pmDate.slice(5, 7));
+    const ly = monthlyOpSummary(data, y - 1, m);
+    // 매출은 현재까지 누적 vs 작년 동기간/전월 동기간
     const monthStart = latest.slice(0, 8) + "01";
-    const cur = sumPeriod(data, monthStart, latest);
-    const lyStart = shiftYear(monthStart, -1);
-    const lyEnd = shiftYear(latest, -1);
-    const ly = sumPeriod(data, lyStart, lyEnd);
-    return {
-      cur: cur.revenue,
-      ly: ly.revenue,
-      change: calcChange(cur.revenue, ly.revenue),
-    };
+    const curRev = sumPeriod(data, monthStart, latest);
+    const pmRev = sumPeriod(data, shiftMonthSafe(monthStart, -1), shiftMonthSafe(latest, -1));
+    const lyRev = sumPeriod(data, shiftYear(monthStart, -1), shiftYear(latest, -1));
+    const revMix = revenueMix(cur);
+    const tMix = timeMix(cur);
+    return { cur, pm, ly, curRev, pmRev, lyRev, revMix, tMix };
   }, [data, latest]);
 
-  // 이번 주 vs 지난 주
-  const weekCompare = useMemo(() => {
-    if (!latest) return null;
-    const wkRange = getCurrentWeek(latest);
-    const cur = sumPeriod(data, wkRange.from, wkRange.to);
-    const prevFrom = addDays(wkRange.from, -7);
-    const prevTo = addDays(wkRange.to, -7);
-    const prev = sumPeriod(data, prevFrom, prevTo);
-    return {
-      cur: cur.revenue,
-      prev: prev.revenue,
-      change: calcChange(cur.revenue, prev.revenue),
-    };
-  }, [data, latest]);
+  // 월별 매출 막대그래프 (2024/2025/2026 나란히)
+  const monthlyBar = useMemo(() => {
+    const arr: any[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const r2024 = monthTotal(data, 2024, m).revenue;
+      const r2025 = monthTotal(data, 2025, m).revenue;
+      const r2026 = monthTotal(data, 2026, m).revenue;
+      arr.push({
+        month: `${m}월`,
+        "2024": r2024 || null,
+        "2025": r2025 || null,
+        "2026": r2026 || null,
+      });
+    }
+    return arr;
+  }, [data]);
 
-  // 최근 30일 추이 (2024/2025/2026 비교)
-  const chart30 = useMemo(() => {
+  // 30일 추이 (꺾은선, 2024/25/26 비교)
+  const line30 = useMemo(() => {
     if (!latest) return [];
     const arr: any[] = [];
     for (let i = 29; i >= 0; i--) {
       const d = addDays(latest, -i);
       const row: any = { date: d.slice(5) };
-      const today = data.find((x) => x.date === d);
-      const ly = data.find((x) => x.date === shiftYear(d, -1));
-      const ly2 = data.find((x) => x.date === shiftYear(d, -2));
-      row["2026"] = today?.revenue ?? null;
-      row["2025"] = ly?.revenue ?? null;
-      row["2024"] = ly2?.revenue ?? null;
+      row["2026"] = data.find((x) => x.date === d)?.revenue ?? null;
+      row["2025"] = data.find((x) => x.date === shiftYear(d, -1))?.revenue ?? null;
+      row["2024"] = data.find((x) => x.date === shiftYear(d, -2))?.revenue ?? null;
       arr.push(row);
     }
     return arr;
   }, [data, latest]);
 
-  const insights = useMemo(() => {
-    if (!latest) return [];
-    return generateInsights(data, latest);
-  }, [data, latest]);
+  // 인플루언서 상태 집계 (자동)
+  const infSummary = useMemo(() => {
+    const total = influencers.length;
+    const cost = influencers.reduce((s: number, i: any) => s + (i.cost || 0), 0);
+    const byStatus: Record<string, number> = {};
+    influencers.forEach((i: any) => {
+      const st = i.status || "촬영 전";
+      byStatus[st] = (byStatus[st] || 0) + 1;
+    });
+    return { total, cost, byStatus };
+  }, [influencers]);
+
+  const insights = useMemo(() => latest ? generateInsights(data, latest) : [], [data, latest]);
 
   if (loading) return <EmptyState message="데이터 불러오는 중..." />;
   if (error) return <EmptyState message={`오류: ${error}`} />;
-  if (!goalStats || !latest) return <EmptyState message="매출 데이터가 없습니다" />;
+  if (!goal || !latest || !kpi) return <EmptyState message="매출 데이터가 없습니다" />;
 
-  // 진행률 색상
-  const progressColor = 
-    goalStats.progress >= 1 ? "bg-[#15803D]" :
-    goalStats.progress >= goalStats.elapsed / goalStats.lastDay ? "bg-[#1E3A8A]" :
-    "bg-[#B45309]";
+  const progressColor = goal.progress >= goal.elapsed / goal.last ? "#1E3A8A" : "#B45309";
 
   return (
     <div className="space-y-6">
-      {/* 헤더 */}
+      {/* === 일일 매출 분석 보고 (기능 A) === */}
+      <DailyReportCard />
+
       <div className="flex items-baseline gap-2 text-sm">
-        <span className="text-[#334155] font-medium">기준일</span>
-        <span className="font-extrabold text-black tnum">{fmtDate(latest, "long")}</span>
+        <span className="text-[#475569] font-bold">기준일</span>
+        <span className="font-black text-black tnum">{fmtDate(latest, "long")}</span>
         <Badge tone="info">실시간</Badge>
       </div>
 
-      {/* === 1. 이번 달 목표 진행 (가장 큰 카드) === */}
+      {/* === 목표 진행 === */}
       <Card pad="p-6" className="bg-gradient-to-br from-[#1E3A8A] to-[#0F172A] border-[#0F172A]">
         <div className="flex items-baseline justify-between mb-1">
-          <h2 className="text-lg font-extrabold text-white">
-            {goalStats.year}년 {goalStats.month}월 목표 진행
-          </h2>
+          <h2 className="text-lg font-black text-white">{goal.y}년 {goal.m}월 목표 진행</h2>
           <span className="text-xs text-white/80 font-bold">목표 5,000만원</span>
         </div>
-        <p className="text-xs text-white/70 mb-4 font-medium">
-          {goalStats.elapsed}일째 / 총 {goalStats.lastDay}일 ({Math.round((goalStats.elapsed / goalStats.lastDay) * 100)}% 경과)
-        </p>
-
-        {/* 진행률 바 */}
+        <p className="text-xs text-white/70 mb-4 font-bold">{goal.elapsed}일째 / 총 {goal.last}일 ({Math.round((goal.elapsed / goal.last) * 100)}% 경과)</p>
         <div className="mb-4">
           <div className="flex items-baseline justify-between mb-2">
-            <span className="text-3xl md:text-4xl font-black text-white tnum">
-              {fmtKRW(goalStats.cur, { compact: true })}
-            </span>
-            <span className="text-lg font-extrabold text-white/90 tnum">
-              {(goalStats.progress * 100).toFixed(1)}%
-            </span>
+            <span className="text-4xl font-black text-white tnum">{fmtKRW(goal.cur, { compact: true })}</span>
+            <span className="text-lg font-black text-white/90 tnum">{(goal.progress * 100).toFixed(1)}%</span>
           </div>
-          <div className="w-full bg-white/20 rounded-full h-3 overflow-hidden">
-            <div
-              className={`h-full ${progressColor} transition-all`}
-              style={{ width: `${Math.min(100, goalStats.progress * 100)}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-[10px] text-white/60 mt-1 font-bold">
-            <span>0</span>
-            <span>2,500만</span>
-            <span>5,000만</span>
-          </div>
+          <ProgressBar pct={goal.progress} color={progressColor} />
         </div>
-
-        {/* 핵심 숫자 4개 */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4 border-t border-white/20">
-          <div>
-            <p className="text-[10px] text-white/70 font-bold uppercase tracking-wide mb-1">남은 매출</p>
-            <p className="text-xl font-black text-white tnum">{fmtKRW(goalStats.gap, { compact: true })}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-white/70 font-bold uppercase tracking-wide mb-1">남은 일수</p>
-            <p className="text-xl font-black text-white tnum">{goalStats.remainDays}일</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-white/70 font-bold uppercase tracking-wide mb-1">하루 필요 매출</p>
-            <p className="text-xl font-black text-white tnum">{fmtKRW(goalStats.needPerDay, { compact: true })}</p>
-          </div>
-          <div>
-            <p className="text-[10px] text-white/70 font-bold uppercase tracking-wide mb-1">월말 예상</p>
-            <p className="text-xl font-black text-white tnum">{fmtKRW(goalStats.projected, { compact: true })}</p>
-            <p className="text-[10px] text-white/70 mt-0.5 font-bold">
-              {fmtPct(goalStats.projected / goalStats.target - 1)} {goalStats.projected >= goalStats.target ? "달성" : "미달"}
-            </p>
-          </div>
+          <Mini label="남은 매출" value={fmtKRW(goal.gap, { compact: true })} />
+          <Mini label="남은 일수" value={`${goal.remainDays}일`} />
+          <Mini label="하루 필요" value={fmtKRW(goal.needPerDay, { compact: true })} />
+          <Mini label="월말 예상" value={fmtKRW(goal.projected, { compact: true })} sub={`${fmtPct(goal.projected / MONTHLY_TARGET - 1)} ${goal.projected >= MONTHLY_TARGET ? "달성" : "미달"}`} />
         </div>
       </Card>
 
-      {/* === 2. 보조 KPI: 이번 주 / 작년 대비 === */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card>
-          <SectionTitle sub="월요일~오늘">이번 주 매출</SectionTitle>
-          <div className="flex items-baseline justify-between mb-3">
-            <span className="text-3xl font-black text-black tnum">
-              {fmtKRW(weekCompare?.cur ?? 0, { compact: true })}
-            </span>
-            <Delta value={weekCompare?.change ?? null} />
-          </div>
-          <p className="text-xs text-[#334155] font-bold">
-            지난 주 같은 기간 {fmtKRW(weekCompare?.prev ?? 0, { compact: true })} 대비
-          </p>
-        </Card>
-        <Card>
-          <SectionTitle sub={`${goalStats.month}/1 ~ ${fmtDate(latest, "md")}`}>작년 같은 기간 비교</SectionTitle>
-          <div className="flex items-baseline justify-between mb-3">
-            <span className="text-3xl font-black text-black tnum">
-              {fmtKRW(yearCompare?.cur ?? 0, { compact: true })}
-            </span>
-            <Delta value={yearCompare?.change ?? null} />
-          </div>
-          <p className="text-xs text-[#334155] font-bold">
-            작년 같은 기간 {fmtKRW(yearCompare?.ly ?? 0, { compact: true })} 대비
-          </p>
-        </Card>
+      {/* === 핵심 KPI === */}
+      <div>
+        <SectionTitle sub="이번 달 현재까지 누적 · 전월/작년 같은 기간 대비">핵심 지표</SectionTitle>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          <KPICard label="이번달 매출" value={fmtKRW(kpi.curRev.revenue, { compact: true })} accent
+            deltaPrev={calcChange(kpi.curRev.revenue, kpi.pmRev.revenue)}
+            deltaYoy={kpi.lyRev.revenue ? calcChange(kpi.curRev.revenue, kpi.lyRev.revenue) : undefined} />
+          <KPICard label="고객수(월누적)" value={kpi.cur.totalPeople.toLocaleString()} unit="명"
+            deltaPrev={kpi.pm.totalPeople ? calcChange(kpi.cur.totalPeople, kpi.pm.totalPeople) : undefined}
+            deltaYoy={kpi.ly.totalPeople ? calcChange(kpi.cur.totalPeople, kpi.ly.totalPeople) : undefined} />
+          <KPICard label="일평균 팀수" value={kpi.cur.dailyAvgTeams} unit="팀"
+            deltaPrev={kpi.pm.dailyAvgTeams ? calcChange(kpi.cur.dailyAvgTeams, kpi.pm.dailyAvgTeams) : undefined} />
+          <KPICard label="평균 객단가" value={fmtKRW(kpi.cur.avgSpend, { compact: true })}
+            deltaPrev={kpi.pm.avgSpend ? calcChange(kpi.cur.avgSpend, kpi.pm.avgSpend) : undefined} />
+          <KPICard label="평균 회전율" value={kpi.cur.avgTurnover ? kpi.cur.avgTurnover.toFixed(2) : "—"}
+            deltaPrev={kpi.pm.avgTurnover ? calcChange(kpi.cur.avgTurnover, kpi.pm.avgTurnover) : undefined} />
+        </div>
       </div>
 
-      {/* === 3. 30일 매출 추이 === */}
-      <Card pad="p-5">
-        <SectionTitle sub="2024년·2025년·2026년 같은 기간 30일 비교">최근 30일 매출 추이</SectionTitle>
-        <div className="h-72 -mx-2">
+      {/* === 매출 구성 (예약/워크인 + 점심/저녁) === */}
+      {(kpi.revMix || kpi.tMix) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {kpi.revMix && (
+            <Card pad="p-4">
+              <p className="text-sm font-extrabold text-black mb-3">예약 vs 워크인 매출</p>
+              <div className="flex w-full h-7 rounded-lg overflow-hidden mb-2">
+                <div style={{ width: `${kpi.revMix.reserve.pct * 100}%`, background: "#1E3A8A" }} className="flex items-center justify-center"><span className="text-[10px] font-extrabold text-white">예약 {(kpi.revMix.reserve.pct * 100).toFixed(0)}%</span></div>
+                <div style={{ width: `${kpi.revMix.walkin.pct * 100}%`, background: "#0891B2" }} className="flex items-center justify-center"><span className="text-[10px] font-extrabold text-white">워크인 {(kpi.revMix.walkin.pct * 100).toFixed(0)}%</span></div>
+              </div>
+              <div className="flex justify-between text-xs font-bold text-[#475569]">
+                <span>예약 {fmtKRW(kpi.revMix.reserve.amount, { compact: true })}</span>
+                <span>워크인 {fmtKRW(kpi.revMix.walkin.amount, { compact: true })}</span>
+              </div>
+            </Card>
+          )}
+          {kpi.tMix && (
+            <Card pad="p-4">
+              <p className="text-sm font-extrabold text-black mb-3">점심 vs 저녁 매출</p>
+              <div className="flex w-full h-7 rounded-lg overflow-hidden mb-2">
+                <div style={{ width: `${kpi.tMix.lunch.pct * 100}%`, background: "#B45309" }} className="flex items-center justify-center"><span className="text-[10px] font-extrabold text-white">점심 {(kpi.tMix.lunch.pct * 100).toFixed(0)}%</span></div>
+                <div style={{ width: `${kpi.tMix.dinner.pct * 100}%`, background: "#1E3A8A" }} className="flex items-center justify-center"><span className="text-[10px] font-extrabold text-white">저녁 {(kpi.tMix.dinner.pct * 100).toFixed(0)}%</span></div>
+              </div>
+              <div className="flex justify-between text-xs font-bold text-[#475569]">
+                <span>점심 {fmtKRW(kpi.tMix.lunch.amount, { compact: true })}</span>
+                <span>저녁 {fmtKRW(kpi.tMix.dinner.amount, { compact: true })}</span>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
+      <Card>
+        <SectionTitle sub="2024 · 2025 · 2026년 같은 달끼리 나란히 비교">월별 매출 비교</SectionTitle>
+        <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chart30} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
-              <CartesianGrid stroke="#CBD5E1" strokeDasharray="3 3" />
+            <BarChart data={monthlyBar} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
+              <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#0F172A", fontWeight: 700 }} />
+              <YAxis tick={{ fontSize: 10, fill: "#475569", fontWeight: 700 }} tickFormatter={(v) => `${Math.round(v / 10000000)}천만`} width={48} />
+              <Tooltip contentStyle={{ fontSize: 13, fontWeight: 600 }} formatter={(v: any) => v ? `${Math.round(v).toLocaleString()}원` : "—"} />
+              <Legend wrapperStyle={{ fontSize: 13, fontWeight: 700 }} />
+              <Bar dataKey="2024" fill="#CBD5E1" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="2025" fill="#64748B" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="2026" fill="#1E3A8A" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* === 30일 추이 (꺾은선) === */}
+      <Card>
+        <SectionTitle sub="2024·2025·2026년 같은 기간 30일">최근 30일 매출 추이</SectionTitle>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={line30} margin={{ top: 10, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid stroke="#E2E8F0" strokeDasharray="3 3" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#0F172A", fontWeight: 700 }} interval={4} />
-              <YAxis
-                tick={{ fontSize: 10, fill: "#334155", fontWeight: 700 }}
-                tickFormatter={(v) => `${Math.round(v / 10000)}만`}
-                width={52}
-              />
-              <Tooltip
-                contentStyle={{ background: "#FFF", border: "1px solid #CBD5E1", fontSize: 13, fontWeight: 600 }}
-                formatter={(v: any) => (v ? `${Math.round(v).toLocaleString()}원` : "—")}
-              />
+              <YAxis tick={{ fontSize: 10, fill: "#475569", fontWeight: 700 }} tickFormatter={(v) => `${Math.round(v / 10000)}만`} width={48} />
+              <Tooltip contentStyle={{ fontSize: 13, fontWeight: 600 }} formatter={(v: any) => v ? `${Math.round(v).toLocaleString()}원` : "—"} />
               <Legend iconType="line" wrapperStyle={{ fontSize: 13, fontWeight: 700 }} />
-              <Line type="monotone" dataKey="2024" stroke="#94A3B8" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="2025" stroke="#475569" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="2024" stroke="#CBD5E1" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="2025" stroke="#64748B" strokeWidth={2} dot={false} />
               <Line type="monotone" dataKey="2026" stroke="#1E3A8A" strokeWidth={3} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </Card>
 
-      {/* === 4. 마케팅 타임라인 === */}
-      <Card pad="p-5">
-        <SectionTitle sub="진행 일자순으로 정리">마케팅 캠페인 타임라인</SectionTitle>
-        <MarketingTimeline campaigns={campaigns} latestDate={latest} />
+      {/* === 마케팅 요약 (비용 + 활동 표) === */}
+      <Card>
+        <SectionTitle sub="이때까지 집행한 비용과 활동 내역">마케팅 요약</SectionTitle>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+          <div className="bg-[#1E3A8A] rounded-2xl p-4">
+            <p className="text-xs font-bold text-white/80 mb-1">누적 마케팅 비용</p>
+            <p className="text-2xl font-black text-white tnum">{fmtKRW(totalCost, { compact: true })}</p>
+          </div>
+          <div className="bg-white border-2 border-[#CBD5E1] rounded-2xl p-4">
+            <p className="text-xs font-bold text-[#475569] mb-1">메타광고</p>
+            <p className="text-xl font-black text-black tnum">{fmtKRW(costItems.filter(c => c.type === "meta").reduce((s, c) => s + c.cost, 0), { compact: true })}</p>
+          </div>
+          <div className="bg-white border-2 border-[#CBD5E1] rounded-2xl p-4">
+            <p className="text-xs font-bold text-[#475569] mb-1">인플루언서</p>
+            <p className="text-xl font-black text-black tnum">{fmtKRW(costItems.filter(c => c.type === "influencer").reduce((s, c) => s + c.cost, 0), { compact: true })}</p>
+          </div>
+          <div className="bg-white border-2 border-[#CBD5E1] rounded-2xl p-4">
+            <p className="text-xs font-bold text-[#475569] mb-1">진행 중</p>
+            <p className="text-xl font-black text-black tnum">{costItems.filter(c => c.status === "ongoing").length}건</p>
+          </div>
+        </div>
+        {/* 활동 표 */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b-2 border-[#CBD5E1] bg-[#F1F5F9] text-[#475569]">
+                <th className="text-left py-2 px-2 font-extrabold text-xs">시점</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">채널</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">누가</th>
+                <th className="text-left py-2 px-2 font-extrabold text-xs">활동</th>
+                <th className="text-center py-2 px-2 font-extrabold text-xs">상태</th>
+                <th className="text-right py-2 px-2 font-extrabold text-xs">비용</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activityRows.map((r, i) => (
+                <tr key={i} className="border-b border-[#E2E8F0] hover:bg-[#F8FAFC]">
+                  <td className="py-2.5 px-2 font-bold text-black tnum whitespace-nowrap">{fmtDate(r.date, "md")}</td>
+                  <td className="py-2.5 px-2"><Badge tone={r.channel === "메타광고" ? "info" : "good"}>{r.channel}</Badge></td>
+                  <td className="py-2.5 px-2 text-black font-bold text-xs whitespace-nowrap">{r.who}</td>
+                  <td className="py-2.5 px-2 text-[#334155] font-medium text-xs">{r.activity}</td>
+                  <td className="py-2.5 px-2 text-center"><Badge tone={r.status === "완료" ? "good" : r.status === "편집 중" ? "info" : "warn"}>{r.status}</Badge></td>
+                  <td className="py-2.5 px-2 text-right font-extrabold text-black tnum">{fmtKRW(r.cost, { compact: true })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
-      {/* === 5. 자동 인사이트 (행동 제안형) === */}
+      {/* === 인플루언서 요약 (자동 집계) === */}
+      <Card>
+        <SectionTitle sub="표에서 상태를 바꾸면 여기 숫자도 자동으로 갱신됩니다">인플루언서 현황</SectionTitle>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-[#1E3A8A] rounded-2xl p-4">
+            <p className="text-xs font-bold text-white/80 mb-1">총 진행</p>
+            <p className="text-2xl font-black text-white tnum">{infSummary.total}명</p>
+          </div>
+          <div className="bg-white border-2 border-[#CBD5E1] rounded-2xl p-4">
+            <p className="text-xs font-bold text-[#475569] mb-1">총 비용</p>
+            <p className="text-xl font-black text-black tnum">{fmtKRW(infSummary.cost, { compact: true })}</p>
+          </div>
+          <div className="bg-white border-2 border-[#CBD5E1] rounded-2xl p-4 col-span-2">
+            <p className="text-xs font-bold text-[#475569] mb-2">진행 상태</p>
+            <div className="flex flex-wrap gap-2">
+              {["촬영 전", "촬영 완료", "편집 중", "업로드 완료"].map((st) => (
+                <span key={st} className="text-xs font-bold text-black">
+                  {st} <span className="font-black text-[#1E3A8A]">{infSummary.byStatus[st] || 0}명</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* === 자동 인사이트 === */}
       {insights.length > 0 && (
         <div>
           <SectionTitle sub="현재 데이터에서 발견된 패턴과 권장 액션">자동 인사이트</SectionTitle>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {insights.map((ins, i) => (
-              <InsightCard key={i} {...ins} />
-            ))}
+            {insights.map((ins, i) => <InsightCard key={i} {...ins} />)}
           </div>
         </div>
       )}
@@ -247,61 +311,12 @@ export default function OverviewTab() {
   );
 }
 
-/** 마케팅 타임라인 — 가로 형태 */
-function MarketingTimeline({ campaigns, latestDate }: { campaigns: any[]; latestDate: string }) {
-  // DB 캠페인 우선, 없으면 정적 데이터
-  const items = campaigns && campaigns.length > 0
-    ? campaigns.map((c: any) => ({
-        date: c.start_date,
-        type: c.type,
-        title: c.title,
-        cost: c.cost,
-        status: c.status ?? "completed",
-        note: c.description,
-      }))
-    : costTimeline.map(c => ({
-        date: c.date, type: c.type, title: c.title, cost: c.cost,
-        status: c.status, note: c.note,
-      }));
-
-  const sorted = [...items].sort((a, b) => (a.date < b.date ? -1 : 1));
-
+function Mini({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="relative">
-      {/* 세로 라인 */}
-      <div className="absolute left-3 top-2 bottom-2 w-0.5 bg-[#CBD5E1]" />
-      
-      <div className="space-y-4">
-        {sorted.map((item, i) => {
-          const isPast = item.date < latestDate;
-          const isOngoing = item.status === "ongoing";
-          const dotColor = isOngoing ? "bg-[#B45309]" : isPast ? "bg-[#15803D]" : "bg-[#64748B]";
-          const typeColor = item.type === "meta" ? "bg-[#1E3A8A] text-white" : 
-                            item.type === "influencer" ? "bg-[#15803D] text-white" :
-                            "bg-[#334155] text-white";
-          const typeLabel = item.type === "meta" ? "메타광고" : 
-                            item.type === "influencer" ? "인플루언서" : "기타";
-          return (
-            <div key={i} className="relative pl-10">
-              <div className={`absolute left-1 top-1 w-5 h-5 rounded-full ${dotColor} border-2 border-white ${isOngoing ? "pulse-dot" : ""}`} />
-              <div className="bg-white border border-[#CBD5E1] rounded-lg p-3">
-                <div className="flex items-baseline gap-2 flex-wrap mb-1">
-                  <span className="text-xs font-extrabold text-black tnum">{fmtDate(item.date, "long")}</span>
-                  <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${typeColor}`}>
-                    {typeLabel}
-                  </span>
-                  {isOngoing && <Badge tone="warn">진행 중</Badge>}
-                  {!isOngoing && isPast && <Badge tone="good">완료</Badge>}
-                  {!isPast && <Badge tone="neutral">예정</Badge>}
-                </div>
-                <p className="text-sm font-extrabold text-black">{item.title}</p>
-                {item.note && <p className="text-xs text-[#334155] mt-1 font-medium">{item.note}</p>}
-                <p className="text-xs font-bold text-black tnum mt-1">비용 {fmtKRW(item.cost, { compact: true })}</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+    <div>
+      <p className="text-[10px] text-white/70 font-bold uppercase tracking-wide mb-1">{label}</p>
+      <p className="text-xl font-black text-white tnum">{value}</p>
+      {sub && <p className="text-[10px] text-white/70 mt-0.5 font-bold">{sub}</p>}
     </div>
   );
 }

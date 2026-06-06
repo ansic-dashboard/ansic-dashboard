@@ -50,3 +50,13 @@ body, p, span, div, li, td, th { color: var(--text); }
   50% { opacity: 0.6; transform: scale(1.2); }
 }
 .pulse-dot { animation: pulse-dot 2s infinite; }
+
+/* 가독성 보강: 기본 본문 크기 + 모바일 표 */
+html { font-size: 16px; }
+@media (max-width: 640px) {
+  html { font-size: 15px; }
+}
+/* 표 안의 숫자가 너무 작아지지 않게 */
+table { font-size: inherit; }
+/* 카드 제목·KPI 숫자 또렷하게 */
+.tnum { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }

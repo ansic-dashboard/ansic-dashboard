@@ -158,10 +158,10 @@ export async function fetchAllSales(): Promise<DailySales[]> {
   const plArrays = await Promise.all(plPromises);
   const pl = plArrays.flat();
   
-  // 합치고 중복 제거 (날짜 기준, P&L 우선)
+  // 합치고 중복 제거 (검증된 historical.json 우선, P&L은 historical에 없는 최신 날짜만 보충)
   const map = new Map<string, DailySales>();
   for (const d of historical) map.set(d.date, d);
-  for (const d of pl) map.set(d.date, d); // P&L이 더 최신이므로 덮어쓰기
+  for (const d of pl) if (!map.has(d.date)) map.set(d.date, d); // historical에 없는 날짜만 추가
   
   return Array.from(map.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
 }
