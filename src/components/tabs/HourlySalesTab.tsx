@@ -3,6 +3,7 @@ import { useState, useRef, useCallback } from "react";
 import { Card, SectionTitle, Badge } from "@/components/ui";
 import { useHourlyData } from "@/lib/hooks";
 import HourlyAnalysisSection from "@/components/HourlyAnalysisSection";
+import HourlyFindingsSummary from "@/components/HourlyFindingsSummary";
 
 const TYPE_LABEL: Record<string, string> = {
   sales_table: "연간 매출표",
@@ -59,6 +60,9 @@ export default function HourlySalesTab() {
       <SectionTitle sub="OKPOS 엑셀(연간매출표 · P&L · 시간대별 점심/저녁)을 올리면 자동으로 분석합니다">
         시간대별 매출 관리
       </SectionTitle>
+
+      {/* 분석 확정 결론 (항상 표시) */}
+      <HourlyFindingsSummary />
 
       {/* 업로드 박스 */}
       <Card>
