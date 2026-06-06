@@ -131,37 +131,18 @@ function convertHistorical(json: any): DailySales[] {
 
 /** 모든 매출 데이터 통합 fetch */
 export async function fetchAllSales(): Promise<DailySales[]> {
-  // 1. 정적 데이터 (2024 ~ 2026.03)
+  // 1. 정적 데이터 (2024 ~ 현재, 매출현황판에서 검증해 미리 파싱한 historical.json)
   const historical = await fetchHistorical();
-  
-  // 2. P&L 시트 (2026.04 ~ 현재 월)
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  
-  const plPromises: Promise<DailySales[]>[] = [];
-  // 2026년 4월부터 현재 월까지
-  if (currentYear === 2026) {
-    for (let m = 4; m <= currentMonth; m++) {
-      plPromises.push(fetchPLMonth(2026, m).catch(() => []));
-    }
-  } else if (currentYear > 2026) {
-    // 2026년 전체 + 다음 해
-    for (let m = 4; m <= 12; m++) {
-      plPromises.push(fetchPLMonth(2026, m).catch(() => []));
-    }
-    for (let m = 1; m <= currentMonth; m++) {
-      plPromises.push(fetchPLMonth(currentYear, m).catch(() => []));
-    }
-  }
-  
-  const plArrays = await Promise.all(plPromises);
-  const pl = plArrays.flat();
-  
-  // 합치고 중복 제거 (검증된 historical.json 우선, P&L은 historical에 없는 최신 날짜만 보충)
+
+  // 2. 라이브 P&L 오버레이 비활성화
+  //    - 월별 P&L 시트마다 '일계 매출' 행 위치가 달라(110행이 4월만 유효) 자투리 값이 가짜 날짜로 들어오는 문제가 있어 끔.
+  //    - 매출/인원 데이터는 historical.json + operational.json(매월 갱신)으로 제공한다.
+  const pl: DailySales[] = [];
+
+  // 합치고 중복 제거 (검증된 historical.json 기준)
   const map = new Map<string, DailySales>();
   for (const d of historical) map.set(d.date, d);
-  for (const d of pl) if (!map.has(d.date)) map.set(d.date, d); // historical에 없는 날짜만 추가
-  
+  for (const d of pl) if (!map.has(d.date)) map.set(d.date, d);
+
   return Array.from(map.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
 }

@@ -9,7 +9,6 @@ import { monthlyOpSummary, revenueMix, timeMix } from "@/lib/operational";
 import { generateInsights } from "@/lib/insight-generator";
 import { activityRows, totalCost, costItems } from "@/lib/marketing-analysis";
 import { Card, SectionTitle, EmptyState, Delta, Badge, KPICard, InsightCard, ProgressBar } from "@/components/ui";
-import DailyReportCard from "@/components/DailyReportCard";
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
@@ -105,9 +104,6 @@ export default function OverviewTab() {
 
   return (
     <div className="space-y-6">
-      {/* === 일일 매출 분석 보고 (기능 A) === */}
-      <DailyReportCard />
-
       <div className="flex items-baseline gap-2 text-sm">
         <span className="text-[#475569] font-bold">기준일</span>
         <span className="font-black text-black tnum">{fmtDate(latest, "long")}</span>

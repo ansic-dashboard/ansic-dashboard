@@ -5,6 +5,7 @@ import SalesAnalysisTab from "@/components/tabs/SalesAnalysisTab";
 import MarketingEffectTab from "@/components/tabs/MarketingEffectTab";
 import InfluencerTab from "@/components/tabs/InfluencerTab";
 import HourlySalesTab from "@/components/tabs/HourlySalesTab";
+import DailyTextReportTab from "@/components/tabs/DailyTextReportTab";
 
 const TABS = [
   { key: "overview", label: "통합 요약" },
@@ -12,6 +13,7 @@ const TABS = [
   { key: "influencer", label: "인플루언서 성과" },
   { key: "marketing", label: "마케팅 효과" },
   { key: "hourly", label: "시간대별 매출 관리" },
+  { key: "daily", label: "일일 매출 분석" },
 ] as const;
 
 type TabKey = typeof TABS[number]["key"];
@@ -54,6 +56,7 @@ export default function Home() {
         {tab === "influencer" && <InfluencerTab />}
         {tab === "marketing" && <MarketingEffectTab />}
         {tab === "hourly" && <HourlySalesTab />}
+        {tab === "daily" && <DailyTextReportTab />}
       </div>
 
       <footer className="border-t border-[#CBD5E1] mt-12 py-6 text-center text-xs text-[#64748B] font-semibold">
