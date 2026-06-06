@@ -88,24 +88,13 @@ async function fetchPLMonth(year: number, month: number): Promise<DailySales[]> 
   return result;
 }
 
+// 빌드 시점에 데이터를 번들에 직접 포함 (Netlify 서버 함수에서도 항상 접근 가능)
+import historicalJson from '@/data/historical.json';
+
 /** historical.json (2024-2026.03) 불러오기 */
 async function fetchHistorical(): Promise<DailySales[]> {
   try {
-    // 빌드 시점에는 public 파일을 fs로 읽고, 런타임은 fetch
-    if (typeof window === 'undefined') {
-      // 서버 환경
-      const fs = await import('fs');
-      const path = await import('path');
-      const filePath = path.join(process.cwd(), 'public', 'data', 'historical.json');
-      const content = fs.readFileSync(filePath, 'utf-8');
-      const json = JSON.parse(content);
-      return convertHistorical(json);
-    } else {
-      // 클라이언트 환경
-      const res = await fetch('/data/historical.json');
-      const json = await res.json();
-      return convertHistorical(json);
-    }
+    return convertHistorical(historicalJson as any);
   } catch (e) {
     console.error('historical.json load failed:', e);
     return [];

@@ -29,7 +29,7 @@ export default function Home() {
             <h1 className="text-lg md:text-xl font-black text-black">안식 매출 대시보드</h1>
             <p className="text-[11px] text-[#475569] font-semibold">ANSIC Sales & Marketing Analytics</p>
           </div>
-          <p className="text-[10px] text-[#475569] tnum font-bold">v3.1</p>
+          <p className="text-[10px] text-[#475569] tnum font-bold">v3.4</p>
         </div>
         <nav className="max-w-7xl mx-auto px-4 md:px-6 overflow-x-auto">
           <div className="flex gap-1">
