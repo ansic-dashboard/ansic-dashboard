@@ -5,6 +5,7 @@ export type DailySales = {
   lunchRevenue?: number;
   dinnerRevenue?: number;
   deliveryRevenue?: number;  // 배달 매출
+  deliveryCount?: number;    // 배달 건수
   // 운영지표 (operational.json에서 결합)
   reserveTeams?: number;
   reservePeople?: number;

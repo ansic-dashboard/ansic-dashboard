@@ -29,7 +29,7 @@ export default function Home() {
             <h1 className="text-lg md:text-xl font-black text-black">안식 매출 대시보드</h1>
             <p className="text-[11px] text-[#475569] font-semibold">ANSIC Sales & Marketing Analytics</p>
           </div>
-          <p className="text-[10px] text-[#475569] tnum font-bold">v3.4</p>
+          <p className="text-[10px] text-[#475569] tnum font-bold">v3.5</p>
         </div>
         <nav className="max-w-7xl mx-auto px-4 md:px-6 overflow-x-auto">
           <div className="flex gap-1">
@@ -60,7 +60,7 @@ export default function Home() {
       </div>
 
       <footer className="border-t border-[#CBD5E1] mt-12 py-6 text-center text-xs text-[#64748B] font-semibold">
-        ANSIC Dashboard v3 · 데이터: 안식 P&L (2026.04~) · 전체 매출표 (2024~2026.03)
+        ANSIC Dashboard v3.5 · 데이터 출처: 안식 매출현황판 (모든매출=POS+배달 기준, 2024~)
       </footer>
     </main>
   );

@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-export type MenuItem = { name: string; amount: number };
+export type MenuItem = { name: string; amount: number; count?: number };
 export type MenuMonth = { 식사: MenuItem[]; 카페: MenuItem[]; foodTotal: number; cafeTotal: number };
 
 /** /data/menu.json (P&L 식사/카페 메뉴별 매출, 월별) */

@@ -25,9 +25,10 @@ export function Delta({ value, suffix = "", inline = false }: { value: number | 
 }
 
 /** 큰 KPI 카드 (도식화 강조) */
-export function KPICard({ label, value, unit, deltaPrev, deltaYoy, icon, accent }: {
+export function KPICard({ label, value, unit, deltaPrev, deltaYoy, deltaPrevLabel = "전월 대비", deltaYoyLabel = "작년 대비", icon, accent }: {
   label: string; value: React.ReactNode; unit?: string;
   deltaPrev?: number | null; deltaYoy?: number | null;
+  deltaPrevLabel?: string; deltaYoyLabel?: string;
   icon?: React.ReactNode; accent?: boolean;
 }) {
   return (
@@ -43,13 +44,13 @@ export function KPICard({ label, value, unit, deltaPrev, deltaYoy, icon, accent 
         <div className={`mt-3 pt-2 border-t space-y-1 ${accent ? "border-white/20" : "border-[#E2E8F0]"}`}>
           {deltaPrev !== undefined && (
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-bold ${accent ? "text-white/70" : "text-[#64748B]"}`}>전월 대비</span>
+              <span className={`text-[10px] font-bold ${accent ? "text-white/70" : "text-[#64748B]"}`}>{deltaPrevLabel}</span>
               <Delta value={deltaPrev} inline />
             </div>
           )}
           {deltaYoy !== undefined && (
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-bold ${accent ? "text-white/70" : "text-[#64748B]"}`}>작년 대비</span>
+              <span className={`text-[10px] font-bold ${accent ? "text-white/70" : "text-[#64748B]"}`}>{deltaYoyLabel}</span>
               <Delta value={deltaYoy} inline />
             </div>
           )}

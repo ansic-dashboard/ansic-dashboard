@@ -16,16 +16,28 @@ export default function MenuShareSection() {
 
   const total = m.foodTotal + m.cafeTotal;
   const foodPct = total ? m.foodTotal / total : 0;
-  const topFood = m.식사.slice(0, 8);
+  const topFood = m.식사.slice(0, 10);
   const maxFood = Math.max(...topFood.map((i) => i.amount), 1);
   const topCafe = m.카페.slice(0, 5);
   const maxCafe = Math.max(...topCafe.map((i) => i.amount), 1);
   const [y, mm] = month.split("-");
 
+  const MenuRow = ({ i, idx, max, color }: { i: typeof topFood[number]; idx: number; max: number; color: string }) => (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-black text-[#94A3B8] w-4 tnum">{idx + 1}</span>
+      <span className="text-xs font-bold text-black w-24 truncate" title={i.name}>{i.name}</span>
+      <div className="flex-1 h-4 bg-[#F1F5F9] rounded">
+        <div className="h-4 rounded" style={{ width: `${(i.amount / max) * 100}%`, background: color }} />
+      </div>
+      <span className="text-[11px] font-bold tnum text-[#64748B] w-12 text-right">{i.count != null ? `${i.count.toLocaleString()}개` : "—"}</span>
+      <span className="text-[11px] font-extrabold tnum text-black w-16 text-right">{fmtKRW(i.amount, { compact: true })}</span>
+    </div>
+  );
+
   return (
     <Card>
       <div className="flex items-start justify-between flex-wrap gap-2 mb-4">
-        <SectionTitle sub="P&L 기준 메뉴별 매출 · 식사 vs 카페 구성과 인기 메뉴">메뉴별 매출 비중</SectionTitle>
+        <SectionTitle sub="메뉴별 판매 수량과 매출 · 식사 TOP10 / 카페·음료 TOP5">메뉴별 매출 비중</SectionTitle>
         <select value={month} onChange={(e) => setSel(e.target.value)}
           className="text-sm font-bold border-2 border-[#CBD5E1] rounded-lg px-3 py-1.5 text-black">
           {months.map((mo) => <option key={mo} value={mo}>{mo.replace("-", "년 ")}월</option>)}
@@ -43,40 +55,28 @@ export default function MenuShareSection() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        {/* 식사 top */}
+        {/* 식사 top10 */}
         <div>
-          <p className="text-sm font-black text-black mb-3">식사 인기 메뉴 <span className="text-[11px] text-[#94A3B8] font-semibold">상위 {topFood.length}</span></p>
+          <p className="text-sm font-black text-black mb-3">식사 인기 메뉴 <span className="text-[11px] text-[#94A3B8] font-semibold">TOP {topFood.length}</span></p>
+          <div className="flex items-center gap-2 mb-1.5 text-[10px] font-extrabold text-[#94A3B8]">
+            <span className="w-4" /><span className="w-24">메뉴</span><span className="flex-1" /><span className="w-12 text-right">수량</span><span className="w-16 text-right">매출</span>
+          </div>
           <div className="space-y-2">
-            {topFood.map((i, idx) => (
-              <div key={i.name} className="flex items-center gap-2">
-                <span className="text-[11px] font-black text-[#94A3B8] w-4 tnum">{idx + 1}</span>
-                <span className="text-xs font-bold text-black w-28 truncate" title={i.name}>{i.name}</span>
-                <div className="flex-1 h-4 bg-[#F1F5F9] rounded">
-                  <div className="h-4 rounded" style={{ width: `${(i.amount / maxFood) * 100}%`, background: "#1E3A8A" }} />
-                </div>
-                <span className="text-[11px] font-bold tnum text-[#475569] w-16 text-right">{fmtKRW(i.amount)}</span>
-              </div>
-            ))}
+            {topFood.map((i, idx) => <MenuRow key={i.name} i={i} idx={idx} max={maxFood} color="#1E3A8A" />)}
           </div>
         </div>
-        {/* 카페 top */}
+        {/* 카페 top5 */}
         <div>
-          <p className="text-sm font-black text-black mb-3">카페·음료 인기 <span className="text-[11px] text-[#94A3B8] font-semibold">상위 {topCafe.length}</span></p>
+          <p className="text-sm font-black text-black mb-3">카페·음료 인기 <span className="text-[11px] text-[#94A3B8] font-semibold">TOP {topCafe.length}</span></p>
+          <div className="flex items-center gap-2 mb-1.5 text-[10px] font-extrabold text-[#94A3B8]">
+            <span className="w-4" /><span className="w-24">메뉴</span><span className="flex-1" /><span className="w-12 text-right">수량</span><span className="w-16 text-right">매출</span>
+          </div>
           <div className="space-y-2">
-            {topCafe.map((i, idx) => (
-              <div key={i.name} className="flex items-center gap-2">
-                <span className="text-[11px] font-black text-[#94A3B8] w-4 tnum">{idx + 1}</span>
-                <span className="text-xs font-bold text-black w-28 truncate" title={i.name}>{i.name}</span>
-                <div className="flex-1 h-4 bg-[#F1F5F9] rounded">
-                  <div className="h-4 rounded" style={{ width: `${(i.amount / maxCafe) * 100}%`, background: "#A8C5E1" }} />
-                </div>
-                <span className="text-[11px] font-bold tnum text-[#475569] w-16 text-right">{fmtKRW(i.amount)}</span>
-              </div>
-            ))}
+            {topCafe.map((i, idx) => <MenuRow key={i.name} i={i} idx={idx} max={maxCafe} color="#0891B2" />)}
           </div>
         </div>
       </div>
-      <p className="text-[11px] text-[#64748B] font-semibold mt-4">※ {y}년 {parseInt(mm)}월 P&L의 메뉴별 매출 합계 기준. 식사 소계·카페 소계로 비중을 계산합니다.</p>
+      <p className="text-[11px] text-[#64748B] font-semibold mt-4">※ {y}년 {parseInt(mm)}월 P&L 메뉴별 판매량·매출 기준. 수량은 월 누적 판매 개수입니다.</p>
     </Card>
   );
 }

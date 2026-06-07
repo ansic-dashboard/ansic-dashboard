@@ -16,10 +16,11 @@ export function lunchOf(d: DailySales): number {
 export function dinnerOf(d: DailySales): number {
   return (d.dinnerRev ?? d.dinnerRevenue ?? 0) || 0;
 }
-/** 객단가: 인원이 있을 때만 */
+/** 객단가: 인원이 있을 때만, 배달 매출 제외 */
 export function spendOf(d: DailySales): number | null {
   const ppl = d.totalPeople ?? d.visitPeople ?? 0;
-  return ppl > 0 ? Math.round(d.revenue / ppl) : null;
+  const pos = d.revenue - (d.deliveryRevenue ?? 0); // 배달 제외 매장 매출
+  return ppl > 0 ? Math.round(pos / ppl) : null;
 }
 
 export type DailyRow = DailySales & { _dateObj: Date };
@@ -46,38 +47,46 @@ export function latestDateWith(data: DailySales[]): string | null {
 
 export type DayAvg = {
   count: number;
-  revenue: number;       // 평균 매출
+  revenue: number;       // 평균 매출 (모든매출, 배달 포함)
   lunch: number;
   dinner: number;
   teams: number;         // 평균 팀 (반올림)
   people: number;        // 평균 인원 (반올림)
-  spend: number;         // 평균 객단가
+  spend: number;         // 평균 객단가 (배달 제외)
   reserveTeams: number;
+  reservePeople: number;
   walkinTeams: number;
+  walkinPeople: number;
+  delivery: number;      // 평균 배달매출
 };
 
 /** 일별 레코드 배열의 평균(반올림 적용) */
 export function avgOf(rows: DailySales[]): DayAvg {
   const n = rows.length;
-  if (!n) return { count: 0, revenue: 0, lunch: 0, dinner: 0, teams: 0, people: 0, spend: 0, reserveTeams: 0, walkinTeams: 0 };
+  if (!n) return { count: 0, revenue: 0, lunch: 0, dinner: 0, teams: 0, people: 0, spend: 0, reserveTeams: 0, reservePeople: 0, walkinTeams: 0, walkinPeople: 0, delivery: 0 };
   const sum = (f: (d: DailySales) => number) => rows.reduce((s, d) => s + (f(d) || 0), 0);
   const revenue = sum((d) => d.revenue);
-  const people = sum((d) => d.totalPeople ?? d.visitPeople ?? 0);
+  const deliverySum = sum((d) => d.deliveryRevenue ?? 0);
   const teams = sum((d) => d.totalTeams ?? 0);
   // 인원/팀이 기록된 날만으로 평균 계산
   const peopleDays = rows.filter((d) => (d.totalPeople ?? d.visitPeople ?? 0) > 0);
   const teamDays = rows.filter((d) => (d.totalTeams ?? 0) > 0);
   const peopleSum = peopleDays.reduce((s, d) => s + (d.totalPeople ?? d.visitPeople ?? 0), 0);
+  const posSum = peopleDays.reduce((s, d) => s + (d.revenue - (d.deliveryRevenue ?? 0)), 0);
   return {
     count: n,
     revenue: Math.round(revenue / n),
     lunch: Math.round(sum(lunchOf) / n),
     dinner: Math.round(sum(dinnerOf) / n),
     teams: teamDays.length ? Math.round(teams / teamDays.length) : 0,
-    people: peopleDays.length ? Math.round(people / peopleDays.length) : 0,
-    spend: peopleSum > 0 ? Math.round(revenue / peopleSum) : 0,
-    reserveTeams: rows.length ? Math.round(sum((d) => d.reserveTeams ?? 0) / n) : 0,
-    walkinTeams: rows.length ? Math.round(sum((d) => d.walkinTeams ?? 0) / n) : 0,
+    people: peopleDays.length ? Math.round(peopleSum / peopleDays.length) : 0,
+    // 객단가 = (배달 제외 매장매출 합) ÷ (인원 합)
+    spend: peopleSum > 0 ? Math.round(posSum / peopleSum) : 0,
+    reserveTeams: Math.round(sum((d) => d.reserveTeams ?? 0) / n),
+    reservePeople: Math.round(sum((d) => d.reservePeople ?? 0) / n),
+    walkinTeams: Math.round(sum((d) => d.walkinTeams ?? 0) / n),
+    walkinPeople: Math.round(sum((d) => d.walkinPeople ?? 0) / n),
+    delivery: Math.round(deliverySum / n),
   };
 }
 

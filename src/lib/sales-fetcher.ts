@@ -110,9 +110,11 @@ function convertHistorical(json: any): DailySales[] {
     result.push({
       date: dateStr,
       weekday: date.getDay(),
-      revenue: day.total,
+      revenue: day.total,            // 모든매출 (POS+배달) — 회장님 보고서 기준
       lunchRevenue: day.lunch,
       dinnerRevenue: day.dinner,
+      deliveryRevenue: day.delivery, // 배달(쿠팡이츠/배민)
+      deliveryCount: day.deliveryCount,
     });
   }
   return result;

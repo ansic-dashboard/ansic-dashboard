@@ -5,7 +5,7 @@ import {
   sumPeriod, getCurrentWeek, getLatestDate, fmtKRW, fmtPct, calcChange,
   addDays, projectMonthEnd, daysInMonth, MONTHLY_TARGET, fmtDate, shiftYear, monthTotal, shiftMonthSafe,
 } from "@/lib/sales-analyzer";
-import { monthlyOpSummary, revenueMix, timeMix } from "@/lib/operational";
+import { periodOpSummary, revenueMix, timeMix } from "@/lib/operational";
 import { generateInsights } from "@/lib/insight-generator";
 import { activityRows, totalCost, costItems } from "@/lib/marketing-analysis";
 import { Card, SectionTitle, EmptyState, Delta, Badge, KPICard, InsightCard, ProgressBar } from "@/components/ui";
@@ -32,22 +32,26 @@ export default function OverviewTab() {
     };
   }, [data, latest]);
 
-  // KPI: 이번달 vs 전월 vs 작년
+  // KPI: 이번달 현재까지(MTD) vs 지난달 같은기간 vs 작년 같은기간
   const kpi = useMemo(() => {
     if (!latest) return null;
-    const y = +latest.slice(0, 4), m = +latest.slice(5, 7);
-    const cur = monthlyOpSummary(data, y, m);
-    const pmDate = shiftMonthSafe(`${y}-${String(m).padStart(2, "0")}-01`, -1);
-    const pm = monthlyOpSummary(data, +pmDate.slice(0, 4), +pmDate.slice(5, 7));
-    const ly = monthlyOpSummary(data, y - 1, m);
-    // 매출은 현재까지 누적 vs 작년 동기간/전월 동기간
     const monthStart = latest.slice(0, 8) + "01";
+    const pmStart = shiftMonthSafe(monthStart, -1), pmEnd = shiftMonthSafe(latest, -1);
+    const lyStart = shiftYear(monthStart, -1), lyEnd = shiftYear(latest, -1);
+    // 모든 지표를 "같은 기간"으로 집계 (이번달 1~N일 vs 지난달 1~N일 vs 작년 1~N일)
+    const cur = periodOpSummary(data, monthStart, latest);
+    const pm = periodOpSummary(data, pmStart, pmEnd);
+    const ly = periodOpSummary(data, lyStart, lyEnd);
     const curRev = sumPeriod(data, monthStart, latest);
-    const pmRev = sumPeriod(data, shiftMonthSafe(monthStart, -1), shiftMonthSafe(latest, -1));
-    const lyRev = sumPeriod(data, shiftYear(monthStart, -1), shiftYear(latest, -1));
+    const pmRev = sumPeriod(data, pmStart, pmEnd);
+    const lyRev = sumPeriod(data, lyStart, lyEnd);
     const revMix = revenueMix(cur);
     const tMix = timeMix(cur);
-    return { cur, pm, ly, curRev, pmRev, lyRev, revMix, tMix };
+    // 비교 라벨 (plain) : "5월 1~6일", "'25.6월 1~6일"
+    const dd = +latest.slice(8, 10);
+    const prevLabel = `${+pmEnd.slice(5, 7)}월 1~${+pmEnd.slice(8, 10)}일`;
+    const yoyLabel = `'${lyEnd.slice(2, 4)}.${+lyEnd.slice(5, 7)}월 1~${+lyEnd.slice(8, 10)}일`;
+    return { cur, pm, ly, curRev, pmRev, lyRev, revMix, tMix, prevLabel, yoyLabel, dd, monthStart };
   }, [data, latest]);
 
   // 월별 매출 막대그래프 (2024/2025/2026 나란히)
@@ -102,12 +106,26 @@ export default function OverviewTab() {
 
   const progressColor = goal.progress >= goal.elapsed / goal.last ? "#1E3A8A" : "#B45309";
 
+  // 오늘(클라이언트 기준) 대비 최종 입력일 상태
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const isToday = latest === today;
+  const todayMD = `${now.getMonth() + 1}/${now.getDate()}`;
+
   return (
     <div className="space-y-6">
-      <div className="flex items-baseline gap-2 text-sm">
-        <span className="text-[#475569] font-bold">기준일</span>
-        <span className="font-black text-black tnum">{fmtDate(latest, "long")}</span>
-        <Badge tone="info">실시간</Badge>
+      <div className="rounded-xl border border-[#CBD5E1] bg-white px-4 py-3">
+        <div className="flex flex-wrap items-baseline gap-2 text-sm">
+          <span className="text-[#475569] font-bold">기준일 (POS 최종 입력일)</span>
+          <span className="font-black text-black tnum">{fmtDate(latest, "long")}</span>
+          <Badge tone={isToday ? "good" : "warn"}>{isToday ? "오늘 입력분 반영" : "당일 매출 미반영"}</Badge>
+        </div>
+        <p className="text-[12px] text-[#475569] font-semibold mt-1.5 leading-relaxed">
+          {isToday
+            ? `오늘(${todayMD}) 입력분까지 반영된 상태입니다. 단, POS 마감 시점에 따라 오늘 점심·저녁이 일부만 들어와 있을 수 있어요.`
+            : `오늘(${todayMD}) 매출은 아직 POS에 입력되지 않았습니다. 위 숫자는 마지막으로 마감된 ${fmtDate(latest, "short")} 기준이며, 오늘 점심 매출은 포함되어 있지 않습니다.`}
+          {" "}매출은 <b>POS+배달(모든매출)</b> 기준, 객단가는 <b>배달 제외</b>로 계산합니다.
+        </p>
       </div>
 
       {/* === 목표 진행 === */}
@@ -134,20 +152,23 @@ export default function OverviewTab() {
 
       {/* === 핵심 KPI === */}
       <div>
-        <SectionTitle sub="이번 달 현재까지 누적 · 전월/작년 같은 기간 대비">핵심 지표</SectionTitle>
+        <SectionTitle sub={`이번달 1~${kpi.dd}일 누적을, 지난달·작년의 같은 1~${kpi.dd}일과 나란히 비교 (기간을 맞춰서 봅니다)`}>핵심 지표</SectionTitle>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          <KPICard label="이번달 매출" value={fmtKRW(kpi.curRev.revenue, { compact: true })} accent
-            deltaPrev={calcChange(kpi.curRev.revenue, kpi.pmRev.revenue)}
-            deltaYoy={kpi.lyRev.revenue ? calcChange(kpi.curRev.revenue, kpi.lyRev.revenue) : undefined} />
-          <KPICard label="고객수(월누적)" value={kpi.cur.totalPeople.toLocaleString()} unit="명"
-            deltaPrev={kpi.pm.totalPeople ? calcChange(kpi.cur.totalPeople, kpi.pm.totalPeople) : undefined}
-            deltaYoy={kpi.ly.totalPeople ? calcChange(kpi.cur.totalPeople, kpi.ly.totalPeople) : undefined} />
+          <KPICard label="이번달 매출(누적)" value={fmtKRW(kpi.curRev.revenue, { compact: true })} accent
+            deltaPrev={calcChange(kpi.curRev.revenue, kpi.pmRev.revenue)} deltaPrevLabel={kpi.prevLabel}
+            deltaYoy={kpi.lyRev.revenue ? calcChange(kpi.curRev.revenue, kpi.lyRev.revenue) : undefined} deltaYoyLabel={kpi.yoyLabel} />
+          <KPICard label="고객수(누적)" value={kpi.cur.totalPeople.toLocaleString()} unit="명"
+            deltaPrev={kpi.pm.totalPeople ? calcChange(kpi.cur.totalPeople, kpi.pm.totalPeople) : undefined} deltaPrevLabel={kpi.prevLabel}
+            deltaYoy={kpi.ly.totalPeople ? calcChange(kpi.cur.totalPeople, kpi.ly.totalPeople) : undefined} deltaYoyLabel={kpi.yoyLabel} />
           <KPICard label="일평균 팀수" value={kpi.cur.dailyAvgTeams} unit="팀"
-            deltaPrev={kpi.pm.dailyAvgTeams ? calcChange(kpi.cur.dailyAvgTeams, kpi.pm.dailyAvgTeams) : undefined} />
-          <KPICard label="평균 객단가" value={fmtKRW(kpi.cur.avgSpend, { compact: true })}
-            deltaPrev={kpi.pm.avgSpend ? calcChange(kpi.cur.avgSpend, kpi.pm.avgSpend) : undefined} />
+            deltaPrev={kpi.pm.dailyAvgTeams ? calcChange(kpi.cur.dailyAvgTeams, kpi.pm.dailyAvgTeams) : undefined} deltaPrevLabel={kpi.prevLabel}
+            deltaYoy={kpi.ly.dailyAvgTeams ? calcChange(kpi.cur.dailyAvgTeams, kpi.ly.dailyAvgTeams) : undefined} deltaYoyLabel={kpi.yoyLabel} />
+          <KPICard label="평균 객단가(배달제외)" value={fmtKRW(kpi.cur.avgSpend, { compact: true })}
+            deltaPrev={kpi.pm.avgSpend ? calcChange(kpi.cur.avgSpend, kpi.pm.avgSpend) : undefined} deltaPrevLabel={kpi.prevLabel}
+            deltaYoy={kpi.ly.avgSpend ? calcChange(kpi.cur.avgSpend, kpi.ly.avgSpend) : undefined} deltaYoyLabel={kpi.yoyLabel} />
           <KPICard label="평균 회전율" value={kpi.cur.avgTurnover ? kpi.cur.avgTurnover.toFixed(2) : "—"}
-            deltaPrev={kpi.pm.avgTurnover ? calcChange(kpi.cur.avgTurnover, kpi.pm.avgTurnover) : undefined} />
+            deltaPrev={kpi.pm.avgTurnover ? calcChange(kpi.cur.avgTurnover, kpi.pm.avgTurnover) : undefined} deltaPrevLabel={kpi.prevLabel}
+            deltaYoy={kpi.ly.avgTurnover ? calcChange(kpi.cur.avgTurnover, kpi.ly.avgTurnover) : undefined} deltaYoyLabel={kpi.yoyLabel} />
         </div>
       </div>
 
@@ -271,7 +292,7 @@ export default function OverviewTab() {
 
       {/* === 인플루언서 요약 (자동 집계) === */}
       <Card>
-        <SectionTitle sub="표에서 상태를 바꾸면 여기 숫자도 자동으로 갱신됩니다">인플루언서 현황</SectionTitle>
+        <SectionTitle sub="인플루언서 탭의 데이터를 자동 집계">인플루언서 현황</SectionTitle>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-[#1E3A8A] rounded-2xl p-4">
             <p className="text-xs font-bold text-white/80 mb-1">총 진행</p>

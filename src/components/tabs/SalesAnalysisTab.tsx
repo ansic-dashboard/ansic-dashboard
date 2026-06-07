@@ -6,7 +6,7 @@ import {
   sumPeriod, getLatestDate, fmtKRW, fmtPct, calcChange,
   shiftYear, shiftMonthSafe, daysInMonth, MONTHLY_TARGET, fmtDate,
 } from "@/lib/sales-analyzer";
-import { monthlyOpSummary, inflowBreakdown, revenueMix, timeMix } from "@/lib/operational";
+import { monthlyOpSummary, periodOpSummary, inflowBreakdown, revenueMix, timeMix } from "@/lib/operational";
 import { generateInsights } from "@/lib/insight-generator";
 import HourlyAnalysisSection from "@/components/HourlyAnalysisSection";
 import { Card, SectionTitle, EmptyState, Delta, Badge, KPICard, InsightCard, EditableInsightCard, ProgressBar } from "@/components/ui";
@@ -61,16 +61,20 @@ export default function SalesAnalysisTab() {
     if (!ym) return null;
     const last = daysInMonth(ym.y, ym.m);
     const mp = String(ym.m).padStart(2, "0");
+    const latestDay = (latest && isCurrentMonth) ? +latest.slice(8, 10) : last;
+    const cap = (n: number) => Math.min(n, last, latestDay);
     let endDay: number;
-    if (effectiveDekad === "current") {
-      endDay = latest && isCurrentMonth ? +latest.slice(8, 10) : last;
-    } else if (effectiveDekad === "d10") endDay = Math.min(10, last);
-    else if (effectiveDekad === "d20") endDay = Math.min(20, last);
-    else endDay = last;
+    if (effectiveDekad === "current") endDay = latestDay;
+    else if (effectiveDekad === "d10") endDay = cap(10);
+    else if (effectiveDekad === "d20") endDay = cap(20);
+    else endDay = cap(last);
+    // 선택 구간의 명목 마지막 날(비교 라벨용) — 현재월 캡 전 값
+    const nominalEnd = effectiveDekad === "d10" ? Math.min(10, last) : effectiveDekad === "d20" ? Math.min(20, last) : last;
     return {
       from: `${ym.y}-${mp}-01`,
       to: `${ym.y}-${mp}-${String(endDay).padStart(2, "0")}`,
-      endDay, last,
+      endDay, last, nominalEnd,
+      partial: endDay < nominalEnd,
     };
   }, [ym, effectiveDekad, latest, isCurrentMonth]);
 
@@ -87,15 +91,14 @@ export default function SalesAnalysisTab() {
     };
   }, [data, periodRange]);
 
-  // 월별 운영지표 (선택 월 전체 + 전월 + 작년)
+  // 운영지표 (선택 기간과 동일 구간 + 지난달·작년 같은 구간)
   const opStats = useMemo(() => {
-    if (!ym) return null;
-    const cur = monthlyOpSummary(data, ym.y, ym.m);
-    const pmDate = shiftMonthSafe(`${ym.y}-${String(ym.m).padStart(2, "0")}-01`, -1);
-    const pm = monthlyOpSummary(data, +pmDate.slice(0, 4), +pmDate.slice(5, 7));
-    const ly = monthlyOpSummary(data, ym.y - 1, ym.m);
+    if (!periodRange) return null;
+    const cur = periodOpSummary(data, periodRange.from, periodRange.to);
+    const pm = periodOpSummary(data, shiftMonthSafe(periodRange.from, -1), shiftMonthSafe(periodRange.to, -1));
+    const ly = periodOpSummary(data, shiftYear(periodRange.from, -1), shiftYear(periodRange.to, -1));
     return { cur, pm, ly };
-  }, [data, ym]);
+  }, [data, periodRange]);
 
   const inflow = useMemo(() => opStats ? inflowBreakdown(opStats.cur) : null, [opStats]);
   const revMix = useMemo(() => opStats ? revenueMix(opStats.cur) : null, [opStats]);
@@ -131,6 +134,14 @@ export default function SalesAnalysisTab() {
   if (!ym || !periodRange || !compare || !opStats) return <EmptyState message="데이터 없음" />;
 
   const hasOpData = opStats.cur.totalPeople > 0;
+
+  // plain 비교 라벨 (예: "5월 1~6일", "2025년 6월 1~6일")
+  const curLabel = `${ym.m}월 1~${periodRange.endDay}일`;
+  const pmToD = shiftMonthSafe(periodRange.to, -1);
+  const pmLabel = `${+pmToD.slice(5, 7)}월 1~${+pmToD.slice(8, 10)}일`;
+  const lyToD = shiftYear(periodRange.to, -1);
+  const lyLabel = `${+lyToD.slice(0, 4)}년 ${+lyToD.slice(5, 7)}월 1~${+lyToD.slice(8, 10)}일`;
+  const daysActual = compare.cur.days;
 
   return (
     <div className="space-y-6">
@@ -168,23 +179,23 @@ export default function SalesAnalysisTab() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="bg-[#1E3A8A] border-2 border-[#1E3A8A] rounded-2xl p-4">
             <p className="text-xs font-extrabold text-white/80 uppercase mb-2">
-              {ym.y}.{ym.m} ({periodRange.from.slice(8)}~{periodRange.to.slice(8)}일)
+              {curLabel} ({daysActual}일치 기준)
             </p>
             <p className="text-3xl font-black text-white tnum">{fmtKRW(compare.cur.revenue, { compact: true })}</p>
             <p className="text-xs text-white/70 font-bold mt-2">{compare.cur.days}일 영업 · 일평균 {fmtKRW(compare.cur.dailyAvg, { compact: true })}</p>
           </div>
-          <CompareCard title="전월 같은 기간" base={compare.pm.revenue} cur={compare.cur.revenue} change={compare.chPM} sub={`${compare.pm.from.slice(5)}~${compare.pm.to.slice(5)}`} />
-          <CompareCard title="작년 같은 기간" base={compare.ly.revenue} cur={compare.cur.revenue} change={compare.chLY} sub={`${compare.ly.from.slice(0, 4)}년 동기간`} />
+          <CompareCard title={pmLabel} base={compare.pm.revenue} cur={compare.cur.revenue} change={compare.chPM} sub={`${compare.pm.days}일치`} />
+          <CompareCard title={lyLabel} base={compare.ly.revenue} cur={compare.cur.revenue} change={compare.chLY} sub={`${compare.ly.days}일치`} />
         </div>
 
         {/* 자연어 요약 */}
         <div className="mt-4 p-4 bg-[#F1F5F9] border border-[#CBD5E1] rounded-xl space-y-1.5">
-          <p className="text-sm font-extrabold text-black">▣ {ym.y}년 {ym.m}월 {DEKAD_TABS.find(t=>t.key===effectiveDekad)?.label} 매출은 {fmtKRW(compare.cur.revenue)}입니다.</p>
+          <p className="text-sm font-extrabold text-black">▣ {ym.y}년 {curLabel} ({daysActual}일치) 매출은 {fmtKRW(compare.cur.revenue)}입니다.</p>
           {compare.chPM !== null && (
-            <p className="text-sm font-bold text-black">▣ 전월 같은 기간({fmtKRW(compare.pm.revenue, { compact: true })})보다 {compare.chPM > 0 ? `${fmtPct(compare.chPM)} 증가` : `${fmtPct(Math.abs(compare.chPM), 1, false)} 감소`}했습니다.</p>
+            <p className="text-sm font-bold text-black">▣ {pmLabel}({fmtKRW(compare.pm.revenue, { compact: true })})보다 {compare.chPM > 0 ? `${fmtPct(compare.chPM)} 증가` : `${fmtPct(Math.abs(compare.chPM), 1, false)} 감소`}했습니다.</p>
           )}
           {compare.chLY !== null && (
-            <p className="text-sm font-bold text-black">▣ 작년 같은 기간({fmtKRW(compare.ly.revenue, { compact: true })})보다 {compare.chLY > 0 ? `${fmtPct(compare.chLY)} 증가` : `${fmtPct(Math.abs(compare.chLY), 1, false)} 감소`}했습니다.</p>
+            <p className="text-sm font-bold text-black">▣ {lyLabel}({fmtKRW(compare.ly.revenue, { compact: true })})보다 {compare.chLY > 0 ? `${fmtPct(compare.chLY)} 증가` : `${fmtPct(Math.abs(compare.chLY), 1, false)} 감소`}했습니다.</p>
           )}
         </div>
 
@@ -206,29 +217,29 @@ export default function SalesAnalysisTab() {
       {/* === 운영지표 KPI === */}
       {hasOpData ? (
         <div>
-          <SectionTitle sub={`${ym.y}년 ${ym.m}월 한 달 기준 · 전월/작년 대비 증감`}>운영 지표</SectionTitle>
+          <SectionTitle sub={`${curLabel} (${daysActual}일치) 기준 · ${pmLabel} · ${lyLabel}과 같은 기간끼리 비교`}>운영 지표</SectionTitle>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
             <KPICard label="일평균 방문 인원" value={opStats.cur.dailyAvgPeople} unit="명"
-              deltaPrev={calcChange(opStats.cur.dailyAvgPeople, opStats.pm.dailyAvgPeople)}
-              deltaYoy={opStats.ly.dailyAvgPeople ? calcChange(opStats.cur.dailyAvgPeople, opStats.ly.dailyAvgPeople) : undefined} />
+              deltaPrev={calcChange(opStats.cur.dailyAvgPeople, opStats.pm.dailyAvgPeople)} deltaPrevLabel={pmLabel}
+              deltaYoy={opStats.ly.dailyAvgPeople ? calcChange(opStats.cur.dailyAvgPeople, opStats.ly.dailyAvgPeople) : undefined} deltaYoyLabel={lyLabel} />
             <KPICard label="일평균 팀수" value={opStats.cur.dailyAvgTeams} unit="팀"
-              deltaPrev={calcChange(opStats.cur.dailyAvgTeams, opStats.pm.dailyAvgTeams)}
-              deltaYoy={opStats.ly.dailyAvgTeams ? calcChange(opStats.cur.dailyAvgTeams, opStats.ly.dailyAvgTeams) : undefined} />
-            <KPICard label="평균 객단가" value={fmtKRW(opStats.cur.avgSpend, { compact: true })}
-              deltaPrev={calcChange(opStats.cur.avgSpend, opStats.pm.avgSpend)}
-              deltaYoy={opStats.ly.avgSpend ? calcChange(opStats.cur.avgSpend, opStats.ly.avgSpend) : undefined} />
+              deltaPrev={calcChange(opStats.cur.dailyAvgTeams, opStats.pm.dailyAvgTeams)} deltaPrevLabel={pmLabel}
+              deltaYoy={opStats.ly.dailyAvgTeams ? calcChange(opStats.cur.dailyAvgTeams, opStats.ly.dailyAvgTeams) : undefined} deltaYoyLabel={lyLabel} />
+            <KPICard label="평균 객단가(배달제외)" value={fmtKRW(opStats.cur.avgSpend, { compact: true })}
+              deltaPrev={calcChange(opStats.cur.avgSpend, opStats.pm.avgSpend)} deltaPrevLabel={pmLabel}
+              deltaYoy={opStats.ly.avgSpend ? calcChange(opStats.cur.avgSpend, opStats.ly.avgSpend) : undefined} deltaYoyLabel={lyLabel} />
             <KPICard label="평균 회전율" value={opStats.cur.avgTurnover ? opStats.cur.avgTurnover.toFixed(2) : "—"}
-              deltaPrev={opStats.pm.avgTurnover ? calcChange(opStats.cur.avgTurnover, opStats.pm.avgTurnover) : undefined} />
+              deltaPrev={opStats.pm.avgTurnover ? calcChange(opStats.cur.avgTurnover, opStats.pm.avgTurnover) : undefined} deltaPrevLabel={pmLabel} />
             <KPICard label="총 방문 인원" value={opStats.cur.totalPeople.toLocaleString()} unit="명"
-              deltaPrev={calcChange(opStats.cur.totalPeople, opStats.pm.totalPeople)}
-              deltaYoy={opStats.ly.totalPeople ? calcChange(opStats.cur.totalPeople, opStats.ly.totalPeople) : undefined} />
+              deltaPrev={calcChange(opStats.cur.totalPeople, opStats.pm.totalPeople)} deltaPrevLabel={pmLabel}
+              deltaYoy={opStats.ly.totalPeople ? calcChange(opStats.cur.totalPeople, opStats.ly.totalPeople) : undefined} deltaYoyLabel={lyLabel} />
           </div>
-          {/* 전월 대비 인원 증감 자연어 */}
+          {/* 같은기간 인원 증감 자연어 */}
           <div className="mt-3 p-3 bg-white border border-[#CBD5E1] rounded-xl">
             <p className="text-sm font-bold text-black">
               {opStats.pm.dailyAvgPeople > 0 && (() => {
                 const diff = opStats.cur.dailyAvgPeople - opStats.pm.dailyAvgPeople;
-                return <>전월 대비 일평균 방문 인원은 <span className={`font-black ${diff >= 0 ? "text-[#15803D]" : "text-[#B91C1C]"}`}>{diff >= 0 ? `${diff}명 증가` : `${Math.abs(diff)}명 감소`}</span>, 객단가는 <span className={`font-black ${opStats.cur.avgSpend >= opStats.pm.avgSpend ? "text-[#15803D]" : "text-[#B91C1C]"}`}>{fmtKRW(opStats.cur.avgSpend - opStats.pm.avgSpend, { compact: true, sign: true })}</span> 변동했습니다.</>;
+                return <>{pmLabel} 대비 일평균 방문 인원은 <span className={`font-black ${diff >= 0 ? "text-[#15803D]" : "text-[#B91C1C]"}`}>{diff >= 0 ? `${diff}명 증가` : `${Math.abs(diff)}명 감소`}</span>, 객단가는 <span className={`font-black ${opStats.cur.avgSpend >= opStats.pm.avgSpend ? "text-[#15803D]" : "text-[#B91C1C]"}`}>{fmtKRW(opStats.cur.avgSpend - opStats.pm.avgSpend, { compact: true, sign: true })}</span> 변동했습니다.</>;
               })()}
             </p>
           </div>

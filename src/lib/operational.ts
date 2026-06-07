@@ -76,7 +76,13 @@ export type MonthlyOpSummary = {
 /** 특정 월의 운영지표 집계 */
 export function monthlyOpSummary(merged: DailySales[], year: number, month: number): MonthlyOpSummary {
   const ym = `${year}-${String(month).padStart(2, "0")}`;
-  const rows = merged.filter((d) => d.date.startsWith(ym));
+  const last = new Date(year, month, 0).getDate();
+  return periodOpSummary(merged, `${ym}-01`, `${ym}-${String(last).padStart(2, "0")}`, ym);
+}
+
+/** 임의 기간(from~to, 포함)의 운영지표 집계 — 같은기간 비교에 사용 */
+export function periodOpSummary(merged: DailySales[], from: string, to: string, ym = ""): MonthlyOpSummary {
+  const rows = merged.filter((d) => d.date >= from && d.date <= to);
   const days = rows.length;
 
   const sum = (key: keyof DailySales) =>
@@ -110,7 +116,8 @@ export function monthlyOpSummary(merged: DailySales[], year: number, month: numb
     totalTeams,
     dailyAvgTeams: days ? Math.round(totalTeams / days) : 0,
     avgTurnover,
-    avgSpend: totalPeople ? Math.round(totalRevenue / totalPeople) : 0,
+    // 객단가 = (총매출 − 배달매출) ÷ 홀 방문인원  (배달 제외)
+    avgSpend: totalPeople ? Math.round((totalRevenue - deliveryRevenue) / totalPeople) : 0,
     deliveryRevenue,
     phoneIn,
     catchIn,

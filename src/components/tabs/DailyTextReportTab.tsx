@@ -53,39 +53,55 @@ export default function DailyTextReportTab() {
   const text = useMemo(() => {
     if (!report) return "";
     const { day, wd, lastWeek, apr, y2025, lastWeekDate } = report;
+    const w = WEEKDAY_KR[wd];
     const lunch = lunchOf(day), dinner = dinnerOf(day);
+    const deli = day.deliveryRevenue ?? 0;
+    const deliCnt = day.deliveryCount ?? 0;
     const ppl = day.totalPeople ?? day.visitPeople ?? 0;
-    const spend = spendOf(day);
+    const teams = day.totalTeams ?? 0;
+    const spend = spendOf(day) ?? 0;
+    const md = (ds: string) => `${+ds.slice(5, 7)}/${+ds.slice(8, 10)}`;
+    const signed = (d: number) => `${d >= 0 ? "+" : ""}${won(d)}`;
+
+    // 방문 현황 한 줄 (총팀/명 + 예약/워크인 + 객단가)
+    const visitLine = (label: string, t: number, p: number, rt: number, rp: number, wt: number, wp: number, sp: number, deliCntArg = 0) =>
+      ` - ${label} : 총 ${t}팀 ${p}명 (예약 ${rt}팀 ${rp}명 + 워크인 ${wt}팀 ${wp}명)${deliCntArg > 0 ? ` + 배달 ${deliCntArg}건` : ""} 객단가 ${won(sp)}`;
+    // 매출 비교 한 줄 (기준매출 → 차액)
+    const revLine = (label: string, base: number, has: boolean) =>
+      has ? ` - ${label} : ${won(base)} → ${signed(day.revenue - base)}` : ` - ${label} : 데이터 없음`;
+
     const L: string[] = [];
-    L.push(`[일일 매출 분석] ${fmtDate(target, "long")}`);
+    L.push("회장님, 금일 매출 분석 보고 드립니다.");
     L.push("");
-    L.push("■ 매출");
-    L.push(`런치 ${won(lunch)} / 디너 ${won(dinner)}`);
-    L.push(`합계 ${won(day.revenue)}`);
+    L.push("1. 매출 비교");
+    L.push(` - 금일 매출 : ${won(day.revenue)} (런치 ${won(lunch)} / 디너 ${won(dinner)})`);
+    L.push(revLine(`지난주 ${w}(${md(lastWeekDate)})`, lastWeek?.revenue ?? 0, !!lastWeek));
+    L.push(revLine(`2026년 4월 ${w}요일 평균`, apr.revenue, apr.count > 0));
+    L.push(revLine(`2025년 ${w}요일 전체 평균`, y2025.revenue, y2025.count > 0));
     L.push("");
-    L.push("■ 비교 (합계 기준)");
-    L.push(cmpLine(`전주 ${WEEKDAY_KR[wd]}요일(${lastWeekDate.slice(5).replace("-", "/")})`, lastWeek, day.revenue, lastWeek?.revenue ?? 0, !!lastWeek));
-    L.push(cmpLine(`2026년 4월 ${WEEKDAY_KR[wd]}요일 평균`, apr, day.revenue, apr.revenue, apr.count > 0));
-    L.push(cmpLine(`2025년 ${WEEKDAY_KR[wd]}요일 평균`, y2025, day.revenue, y2025.revenue, y2025.count > 0));
-    L.push("");
-    L.push("■ 방문");
-    if (day.totalTeams != null || ppl) {
-      const parts: string[] = [];
-      if (day.reserveTeams != null) parts.push(`예약 ${day.reserveTeams}팀·${day.reservePeople ?? "—"}명`);
-      if (day.walkinTeams != null) parts.push(`워크인 ${day.walkinTeams}팀·${day.walkinPeople ?? "—"}명`);
-      L.push(`총 ${day.totalTeams ?? "—"}팀 / ${ppl || "—"}명${parts.length ? ` (${parts.join(", ")})` : ""}`);
-      const inflow: string[] = [];
-      if (day.phoneIn != null) inflow.push(`전화 ${day.phoneIn}`);
-      if (day.catchIn != null) inflow.push(`캐치 ${day.catchIn}`);
-      if (day.naverIn != null) inflow.push(`네이버 ${day.naverIn}`);
-      if (inflow.length) L.push(`유입 ${inflow.join(" · ")}`);
-      if (spend) L.push(`객단가 ${won(spend)}`);
+    L.push("2. 방문 현황");
+    L.push(visitLine(
+      "금일", teams, ppl,
+      day.reserveTeams ?? 0, day.reservePeople ?? 0,
+      day.walkinTeams ?? 0, day.walkinPeople ?? 0, spend, deliCnt
+    ));
+    if (lastWeek) {
+      L.push(visitLine(
+        `지난주 ${md(lastWeekDate)}`,
+        lastWeek.totalTeams ?? 0, lastWeek.totalPeople ?? lastWeek.visitPeople ?? 0,
+        lastWeek.reserveTeams ?? 0, lastWeek.reservePeople ?? 0,
+        lastWeek.walkinTeams ?? 0, lastWeek.walkinPeople ?? 0, spendOf(lastWeek) ?? 0
+      ));
     } else {
-      L.push("인원 데이터 없음");
+      L.push(` - 지난주 ${md(lastWeekDate)} : 데이터 없음`);
     }
+    if (apr.count > 0)
+      L.push(visitLine(`2026년 4월 ${w}요일 평균`, apr.reserveTeams + apr.walkinTeams, apr.reservePeople + apr.walkinPeople, apr.reserveTeams, apr.reservePeople, apr.walkinTeams, apr.walkinPeople, apr.spend));
+    if (y2025.count > 0)
+      L.push(visitLine(`2025년 ${w}요일 전체 평균`, y2025.reserveTeams + y2025.walkinTeams, y2025.reservePeople + y2025.walkinPeople, y2025.reserveTeams, y2025.reservePeople, y2025.walkinTeams, y2025.walkinPeople, y2025.spend));
     L.push("");
-    L.push("■ 원인 분석");
-    L.push(cause.trim() ? cause.trim() : "(원인 분석을 입력하세요)");
+    L.push("3. 원인 분석");
+    L.push(cause.trim() ? cause.trim() : "(직접 작성)");
     return L.join("\n");
   }, [report, target, cause]);
 
